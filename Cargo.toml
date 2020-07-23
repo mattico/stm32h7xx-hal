@@ -30,6 +30,7 @@ void = { version = "1.0.2", default-features = false }
 cast = { version = "0.2.3", default-features = false }
 nb = "0.1.2"
 paste = "0.1.18"
+synopsys-usb-otg = { version = "^0.2.1", features = ["cortex-m"], optional = true }
 
 [dependencies.bare-metal]
 version = "0.2.5"
@@ -39,6 +40,8 @@ features = ["const-fn"]
 panic-itm = "~0.4.1"
 cortex-m-rtic = "0.5.3"
 cortex-m-log = { version = "~0.6", features = ["itm"] }
+usb-device = "0.2.5"
+usbd-serial = "0.1.0"
 
 [features]
 default = ["unproven"]
@@ -51,6 +54,7 @@ dsi = []
 cm4 = []
 cm7 = []
 rt = ["stm32h7/rt"]
+usb_hs = ["synopsys-usb-otg", "synopsys-usb-otg/hs"]
 stm32h742 = ["stm32h7/stm32h743", "device-selected", "singlecore"]
 stm32h743 = ["stm32h7/stm32h743", "device-selected", "singlecore"]
 stm32h753 = ["stm32h7/stm32h753", "device-selected", "singlecore"]
@@ -84,3 +88,8 @@ required-features = ["rt"]
 [[example]]
 name = "vos0"
 required-features = ["revision_v"]
+
+[[example]]
+name = "usb_serial"
+required-features = ["usb_hs"]
+

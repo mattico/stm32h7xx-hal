@@ -266,7 +266,8 @@ peripheral_reset_and_enable_control! {
     AHB1, "AMBA High-performance Bus (AHB1) peripherals" => [
         Eth1Mac, Dma2, Dma1,
         #[cfg(any(feature = "dualcore"))] Art,
-        Adc12
+        Adc12,
+        Usb1Otg [kernel clk: Usb d2ccip2 "USB"]
     ];
 
     AHB2, "AMBA High-performance Bus (AHB2) peripherals" => [
