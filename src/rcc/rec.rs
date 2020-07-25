@@ -264,10 +264,11 @@ macro_rules! variant_return_type {
 // Enumerate all peripherals and optional clock multiplexers
 peripheral_reset_and_enable_control! {
     AHB1, "AMBA High-performance Bus (AHB1) peripherals" => [
+        Usb1Otg [group clk: Usb d2ccip2 "USB"],
+        Usb2Otg [group clk: Usb],
         Eth1Mac, Dma2, Dma1,
         #[cfg(any(feature = "dualcore"))] Art,
-        Adc12,
-        Usb1Otg [kernel clk: Usb d2ccip2 "USB"]
+        Adc12
     ];
 
     AHB2, "AMBA High-performance Bus (AHB2) peripherals" => [
