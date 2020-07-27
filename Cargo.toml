@@ -30,7 +30,7 @@ void = { version = "1.0.2", default-features = false }
 cast = { version = "0.2.3", default-features = false }
 nb = "0.1.2"
 paste = "0.1.18"
-synopsys-usb-otg = { version = "^0.2.1", features = ["cortex-m"], optional = true }
+synopsys-usb-otg = { version = "^0.2.2", features = ["cortex-m"], optional = true }
 
 [dependencies.bare-metal]
 version = "0.2.5"
