@@ -721,6 +721,30 @@ tim_pin_hal! {
     TIM8: (C3, cc3e, ccmr2_output, oc3pe, oc3m, ccr3, u16),
     TIM8: (C4, cc4e, ccmr2_output, oc4pe, oc4m, ccr4, u16),
 }
+tim_pin_hal! {
+    TIM12: (C1, cc1e, ccmr1_output, oc1pe, oc1m, ccr1, u16),
+    TIM12: (C2, cc2e, ccmr1_output, oc2pe, oc2m, ccr2, u16),
+}
+tim_pin_hal! {
+    TIM13: (C1, cc1e, ccmr1_output, oc1pe, oc1m, ccr1, u16),
+    TIM13: (C2, cc2e, ccmr1_output, oc2pe, oc2m, ccr2, u16),
+}
+tim_pin_hal! {
+    TIM14: (C1, cc1e, ccmr1_output, oc1pe, oc1m, ccr1, u16),
+    TIM14: (C2, cc2e, ccmr1_output, oc2pe, oc2m, ccr2, u16),
+}
+tim_pin_hal! {
+    TIM15: (C1, cc1e, ccmr1_output, oc1pe, oc1m, ccr1, u16),
+    TIM15: (C2, cc2e, ccmr1_output, oc2pe, oc2m, ccr2, u16),
+}
+tim_pin_hal! {
+    TIM16: (C1, cc1e, ccmr1_output, oc1pe, oc1m, ccr1, u16),
+    TIM16: (C2, cc2e, ccmr1_output, oc2pe, oc2m, ccr2, u16),
+}
+tim_pin_hal! {
+    TIM17: (C1, cc1e, ccmr1_output, oc1pe, oc1m, ccr1, u16),
+    TIM17: (C2, cc2e, ccmr1_output, oc2pe, oc2m, ccr2, u16),
+}
 
 // Low-power timers
 macro_rules! lptim_hal {
