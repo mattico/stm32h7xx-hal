@@ -45,6 +45,7 @@ use crate::Never;
 
 /// Serial error
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[non_exhaustive]
 pub enum Error {
     /// Framing error
@@ -141,6 +142,7 @@ pub mod config {
     }
 
     #[derive(Debug)]
+    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
     pub struct InvalidConfig;
 
     impl Default for Config {

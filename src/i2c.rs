@@ -49,6 +49,7 @@ pub enum Stop {
 
 /// I2C error
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[non_exhaustive]
 pub enum Error {
     /// Bus error
@@ -91,6 +92,7 @@ where
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct I2c<I2C> {
     i2c: I2C,
 }

@@ -54,6 +54,7 @@ pub enum RtcClock {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// An error preventing the RTC from initializing
 pub enum InitError {
     RtcNotRunning,
@@ -62,6 +63,7 @@ pub enum InitError {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum DstError {
     ClockNotInitialized,
     AlreadyDst,
@@ -85,9 +87,7 @@ impl Rtc {
     ) -> Self {
         match Rtc::try_open(rtc, prec, clock_source, clocks) {
             Ok(rtc) => rtc,
-            Err((rtc, prec, _err)) => {
-                Rtc::init(rtc, prec, clock_source, clocks)
-            }
+            Err((rtc, prec, _err)) => Rtc::init(rtc, prec, clock_source, clocks),
         }
     }
 
@@ -105,18 +105,16 @@ impl Rtc {
         let rcc = unsafe { &*RCC::ptr() };
         let bdcr = rcc.bdcr.read();
 
-        let clock_source_matches =
-            match (clock_source, prec.get_kernel_clk_mux()) {
-                (RtcClock::Lsi, backup::RtcClkSel::LSI) => true,
-                (RtcClock::Hse { divider }, backup::RtcClkSel::HSE) => {
-                    rcc.cfgr.read().rtcpre().bits() == divider
-                }
-                (RtcClock::Lse { bypass, css, .. }, backup::RtcClkSel::LSE) => {
-                    bypass == bdcr.lsebyp().is_bypassed()
-                        && css == bdcr.lsecsson().is_security_on()
-                }
-                _ => false,
-            };
+        let clock_source_matches = match (clock_source, prec.get_kernel_clk_mux()) {
+            (RtcClock::Lsi, backup::RtcClkSel::LSI) => true,
+            (RtcClock::Hse { divider }, backup::RtcClkSel::HSE) => {
+                rcc.cfgr.read().rtcpre().bits() == divider
+            }
+            (RtcClock::Lse { bypass, css, .. }, backup::RtcClkSel::LSE) => {
+                bypass == bdcr.lsebyp().is_bypassed() && css == bdcr.lsecsson().is_security_on()
+            }
+            _ => false,
+        };
         if !clock_source_matches {
             return Err((rtc, prec, InitError::ConfigMismatch));
         }
@@ -134,12 +132,7 @@ impl Rtc {
     }
 
     /// Resets the RTC, including the backup registers, then initializes it.
-    pub fn init(
-        rtc: RTC,
-        prec: backup::Rtc,
-        clock_source: RtcClock,
-        clocks: &CoreClocks,
-    ) -> Self {
+    pub fn init(rtc: RTC, prec: backup::Rtc, clock_source: RtcClock, clocks: &CoreClocks) -> Self {
         let mut prec = prec.reset().enable();
 
         let rcc = unsafe { &*RCC::ptr() };
@@ -380,12 +373,7 @@ impl Rtc {
                 let second = data.st().bits() * 10 + data.su().bits();
                 let micro = self.ss_to_us(ss);
 
-                return NaiveTime::from_hms_micro_opt(
-                    u32(hour),
-                    u32(minute),
-                    u32(second),
-                    micro,
-                );
+                return NaiveTime::from_hms_micro_opt(u32(hour), u32(minute), u32(second), micro);
             }
         }
     }
@@ -404,8 +392,7 @@ impl Rtc {
             // so read ssr again and see if it has changed. (see RM0433 Rev 7 46.3.9)
             let ss_after = self.reg.ssr.read().ss().bits();
             if ss == ss_after {
-                let year =
-                    2000 + i32(dr.yt().bits()) * 10 + i32(dr.yu().bits());
+                let year = 2000 + i32(dr.yt().bits()) * 10 + i32(dr.yu().bits());
                 let month = dr.mt().bits() as u8 * 10 + dr.mu().bits();
                 let day = dr.dt().bits() * 10 + dr.du().bits();
 
@@ -419,12 +406,8 @@ impl Rtc {
                 let second = tr.st().bits() * 10 + tr.su().bits();
                 let micro = self.ss_to_us(ss);
 
-                let time = NaiveTime::from_hms_micro_opt(
-                    u32(hour),
-                    u32(minute),
-                    u32(second),
-                    micro,
-                )?;
+                let time =
+                    NaiveTime::from_hms_micro_opt(u32(hour), u32(minute), u32(second), micro)?;
 
                 return Some(date.and_time(time));
             }
@@ -615,12 +598,7 @@ impl Rtc {
         let minute = data.mnt().bits() * 10 + data.mnu().bits();
         let second = data.st().bits() * 10 + data.su().bits();
         let micro = self.ss_to_us(self.reg.tsssr.read().ss().bits());
-        let time = NaiveTime::from_hms_micro_opt(
-            u32(hour),
-            u32(minute),
-            u32(second),
-            u32(micro),
-        )?;
+        let time = NaiveTime::from_hms_micro_opt(u32(hour), u32(minute), u32(second), u32(micro))?;
 
         // Clear timestamp interrupt and internal timestamp interrupt (VBat transition)
         // TODO: Timestamp overflow flag
@@ -773,3 +751,4 @@ impl Rtc {
         self.prec.kernel_clk_mux(backup::RtcClkSel::LSI);
     }
 }
+S

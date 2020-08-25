@@ -51,6 +51,11 @@ version = "0.4"
 default-features = false
 optional = true
 
+[dependencies.defmt]
+git = "https://github.com/knurling-rs/defmt"
+rev = "574f77f"
+optional = true
+
 [dev-dependencies]
 cortex-m-rtic = "0.5.3"
 log = "0.4.11"

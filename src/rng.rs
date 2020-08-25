@@ -10,6 +10,7 @@ use crate::stm32::RNG;
 use crate::time::Hertz;
 
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ErrorKind {
     ClockError,
     SeedError,
@@ -39,8 +40,7 @@ impl RngExt for RNG {
         let prec = prec.enable().reset();
 
         let hclk = clocks.hclk();
-        let rng_clk = Self::kernel_clk(prec, clocks)
-            .expect("RNG input clock not running!");
+        let rng_clk = Self::kernel_clk(prec, clocks).expect("RNG input clock not running!");
 
         // Otherwise clock checker will always flag an error
         // See RM0433 Rev 6 Section 33.3.6

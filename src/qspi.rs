@@ -54,6 +54,7 @@ use core::{marker::PhantomData, ptr};
 
 /// Represents operation modes of the QSPI interface.
 #[derive(Debug, Copy, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum QspiMode {
     /// Only a single IO line (IO0) is used for transmit and a separate line (IO1) is used for receive.
     OneBit,
@@ -92,6 +93,7 @@ pub enum SamplingEdge {
 
 /// Indicates an error with the QSPI peripheral.
 #[derive(Debug, Copy, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum QspiError {
     Busy,
     Underflow,
@@ -99,6 +101,7 @@ pub enum QspiError {
 
 /// Indicates a specific QSPI bank to use.
 #[derive(Debug, Copy, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Bank {
     One,
     Two,
