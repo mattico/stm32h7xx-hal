@@ -94,6 +94,7 @@ use crate::time::Hertz;
 
 /// SPI error
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[non_exhaustive]
 pub enum Error {
     /// Overrun occurred

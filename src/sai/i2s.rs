@@ -27,14 +27,10 @@ use crate::gpio::gpioa::{PA0, PA1, PA12, PA2};
 use crate::gpio::gpiob::PB2;
 use crate::gpio::gpioc::{PC0, PC1};
 #[cfg(not(feature = "rm0455"))]
-use crate::gpio::gpiod::{
-    PD0, PD1, PD10, PD11, PD12, PD13, PD14, PD15, PD4, PD6, PD8, PD9,
-};
+use crate::gpio::gpiod::{PD0, PD1, PD10, PD11, PD12, PD13, PD14, PD15, PD4, PD6, PD8, PD9};
 #[cfg(feature = "rm0455")]
 use crate::gpio::gpiod::{PD11, PD12, PD13, PD6};
-use crate::gpio::gpioe::{
-    PE0, PE11, PE12, PE13, PE14, PE2, PE3, PE4, PE5, PE6,
-};
+use crate::gpio::gpioe::{PE0, PE11, PE12, PE13, PE14, PE2, PE3, PE4, PE5, PE6};
 use crate::gpio::gpiof::{PF11, PF6, PF7, PF8, PF9};
 use crate::gpio::gpiog::{PG10, PG7, PG9};
 use crate::gpio::gpioh::{PH2, PH3};
@@ -89,6 +85,7 @@ pub enum I2SSync {
 }
 
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum I2SError {
     NoChannelAvailable,
 }
@@ -133,8 +130,7 @@ pub trait I2SPinSdA<SAI> {}
 pub trait I2SPinSdB<SAI> {}
 
 /// Trait for valid combination of SAIxA pins
-impl<SAI, MCLK, SCK, FS, SD1, SD2> I2SPinsChA<SAI>
-    for (MCLK, SCK, FS, SD1, Option<SD2>)
+impl<SAI, MCLK, SCK, FS, SD1, SD2> I2SPinsChA<SAI> for (MCLK, SCK, FS, SD1, Option<SD2>)
 where
     MCLK: I2SPinMclkA<SAI>,
     SCK: I2SPinSckA<SAI>,
@@ -145,8 +141,7 @@ where
 }
 
 /// Trait for valid combination of SAIxB pins
-impl<SAI, MCLK, SCK, FS, SD1, SD2> I2SPinsChB<SAI>
-    for (MCLK, SCK, FS, SD1, Option<SD2>)
+impl<SAI, MCLK, SCK, FS, SD1, SD2> I2SPinsChB<SAI> for (MCLK, SCK, FS, SD1, Option<SD2>)
 where
     MCLK: I2SPinMclkB<SAI>,
     SCK: I2SPinSckB<SAI>,
@@ -238,10 +233,7 @@ impl I2SChanConfig {
     }
 
     /// Set frame sync to active high, defaults to active low
-    pub fn set_frame_sync_active_high(
-        mut self,
-        frame_sync_active_high: bool,
-    ) -> Self {
+    pub fn set_frame_sync_active_high(mut self, frame_sync_active_high: bool) -> Self {
         self.frame_sync_active_high = frame_sync_active_high;
         self
     }
@@ -728,11 +720,7 @@ fn read(audio_ch: &CH) -> nb::Result<(u32, u32), I2SError> {
     }
 }
 
-fn send(
-    left_word: u32,
-    right_word: u32,
-    audio_ch: &CH,
-) -> nb::Result<(), I2SError> {
+fn send(left_word: u32, right_word: u32, audio_ch: &CH) -> nb::Result<(), I2SError> {
     // The FIFO is 8 words long. A write consists of 2 words, in stereo mode.
     // Therefore you need to wait for 3/4s to ensure 2 words are available for writing.
     match audio_ch.sr.read().flvl().variant() {

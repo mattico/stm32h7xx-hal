@@ -24,6 +24,7 @@ macro_rules! define_ptr_type {
 
 /// Uniqure Device ID register
 #[derive(Hash, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(C)]
 pub struct Uid(u128);
 
@@ -41,6 +42,7 @@ impl Uid {
 
 /// Size of integrated flash
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(C)]
 pub struct FlashSize(u16);
 
@@ -63,6 +65,7 @@ impl FlashSize {
 
 /// ADC VREF calibration value is stored in at the factory
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(C)]
 pub struct VREFIN_CAL(u16);
 
@@ -80,6 +83,7 @@ impl VREFIN_CAL {
 
 /// A temperature reading taken at 30°C stored at the factory
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(C)]
 pub struct TS_CAL_30(u16);
 
@@ -97,6 +101,7 @@ impl TS_CAL_30 {
 
 /// A temperature reading taken at 110°C stored at the factory
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(C)]
 pub struct TS_CAL_110(u16);
 

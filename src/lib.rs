@@ -49,6 +49,7 @@
 extern crate paste;
 
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Never {}
 
 #[cfg(not(feature = "device-selected"))]
@@ -79,17 +80,9 @@ pub use nb::block;
 pub use stm32h7::Variant;
 
 // Single core
-#[cfg(any(
-    feature = "stm32h742",
-    feature = "stm32h743",
-    feature = "stm32h750",
-))]
+#[cfg(any(feature = "stm32h742", feature = "stm32h743", feature = "stm32h750",))]
 pub use stm32h7::stm32h743 as stm32;
-#[cfg(any(
-    feature = "stm32h742v",
-    feature = "stm32h743v",
-    feature = "stm32h750v",
-))]
+#[cfg(any(feature = "stm32h742v", feature = "stm32h743v", feature = "stm32h750v",))]
 pub use stm32h7::stm32h743v as stm32;
 
 // Single core with crypto
@@ -106,11 +99,7 @@ pub use stm32h7::stm32h757cm7 as stm32;
 // TODO(rm0399): soundness of PeripheralREC macro in rcc/rec.rs
 
 // High Memory Integration
-#[cfg(any(
-    feature = "stm32h7b3",
-    feature = "stm32h7a3",
-    feature = "stm32h7b0",
-))]
+#[cfg(any(feature = "stm32h7b3", feature = "stm32h7a3", feature = "stm32h7b0",))]
 pub use stm32h7::stm32h7b3 as stm32;
 
 #[cfg(all(feature = "rm0433", feature = "rm0399"))]

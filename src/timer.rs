@@ -14,8 +14,7 @@ use crate::stm32::{LPTIM1, LPTIM2, LPTIM3};
 use crate::stm32::{LPTIM4, LPTIM5};
 
 use crate::stm32::{
-    TIM1, TIM12, TIM13, TIM14, TIM15, TIM16, TIM17, TIM2, TIM3, TIM4, TIM5,
-    TIM6, TIM7, TIM8,
+    TIM1, TIM12, TIM13, TIM14, TIM15, TIM16, TIM17, TIM2, TIM3, TIM4, TIM5, TIM6, TIM7, TIM8,
 };
 
 use cast::{u16, u32};
@@ -167,18 +166,14 @@ pub trait TimerExt<TIM> {
     /// Counts from 0 to the counter's maximum value, then repeats.
     /// Because this only uses the timer prescaler, the frequency
     /// is rounded to a multiple of the timer's kernel clock.
-    fn tick_timer<T>(
-        self,
-        frequency: T,
-        prec: Self::Rec,
-        clocks: &CoreClocks,
-    ) -> TIM
+    fn tick_timer<T>(self, frequency: T, prec: Self::Rec, clocks: &CoreClocks) -> TIM
     where
         T: Into<Hertz>;
 }
 
 /// Hardware timers
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Timer<TIM> {
     clk: u32,
     tim: TIM,

@@ -61,10 +61,7 @@
 
 use core::fmt;
 
-use sdio_host::{
-    BusWidth, CardCapacity, CardStatus, CurrentState, SDStatus, CID, CSD, OCR,
-    SCR,
-};
+use sdio_host::{BusWidth, CardCapacity, CardStatus, CurrentState, SDStatus, CID, CSD, OCR, SCR};
 
 use crate::gpio::gpioa::PA0;
 use crate::gpio::gpiob::{PB14, PB15, PB3, PB4, PB8, PB9};
@@ -209,8 +206,9 @@ pins! {
 
 /// The signalling scheme used on the SDMMC bus
 #[non_exhaustive]
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Signalling {
     SDR12,
     SDR25,
@@ -228,6 +226,7 @@ impl Default for Signalling {
 #[non_exhaustive]
 #[allow(missing_docs)]
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Error {
     Timeout,
     SoftwareTimeout,
@@ -349,12 +348,7 @@ pub trait SdmmcExt<SDMMC>: Sized {
 
     /// Create and enable the Sdmmc device. Initially the bus is clocked at
     /// <400kHz, so that SD cards can be initialised.
-    fn sdmmc<PINS>(
-        self,
-        _pins: PINS,
-        prec: Self::Rec,
-        clocks: &CoreClocks,
-    ) -> Sdmmc<SDMMC>
+    fn sdmmc<PINS>(self, _pins: PINS, prec: Self::Rec, clocks: &CoreClocks) -> Sdmmc<SDMMC>
     where
         PINS: Pins<SDMMC>;
 
