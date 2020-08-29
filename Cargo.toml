@@ -187,5 +187,5 @@ name = "spi_dma"
 required-features = ["rm0433"]
 
 [[example]]
-name = "dma_uart"
+name = "dma_uart_tx"
 required-features = ["rt"]
