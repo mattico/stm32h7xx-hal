@@ -12,11 +12,10 @@ use core::cell::RefCell;
 use cortex_m::interrupt::Mutex;
 use cortex_m_rt::entry;
 use log::info;
-use stm32h7xx_hal::rcc::ResetEnable;
 use stm32h7xx_hal::{pac, prelude::*};
 use stm32h7xx_hal::interrupt;
+use stm32h7xx_hal::rcc::ResetEnable;
 
-#[link_section = ".sram3"]
 static QUEUE: BBBuffer<U8192> = BBBuffer(ConstBBBuffer::new());
 
 static DMA: Mutex<RefCell<Option<DmaState>>> = Mutex::new(RefCell::new(None));
@@ -150,24 +149,20 @@ fn main() -> ! {
     let pwr = dp.PWR.constrain();
     let vos = pwr.freeze();
 
-    // Enable SRAM3
-    info!("Setup SRAM3...                ");
-    dp.RCC.ahb2enr.modify(|_, w| w.sram3en().enabled());
-
-    // Disable cache for SRAM3 so writes to it don't pollute dcache and actually complete before DMA reads
+    // Disable cache for QUEUE so writes to it don't pollute dcache and actually complete before DMA reads
     // https://community.st.com/s/article/FAQ-DMA-is-not-working-on-STM32H7-devices
     unsafe {
         cp.MPU.ctrl.write(0b101); // Enable MPU and Default Memory Map
         cp.MPU.rnr.write(0); // Region 0
-        cp.MPU.rbar.write(0x30040000 as usize as u32); // SRAM3 Address
+        cp.MPU.rbar.write(&QUEUE as *const _ as u32); // SRAM3 Address
         cp.MPU.rasr.write(
             1 << 28 // Disable instruction fetch
             | 0b011 << 24 // RW/RW
             | 0b001000 << 16 // Regular memory, non-cacheable
-            | 14 << 1 // Size: 2^15 = 32K
+            | 12 << 1 // Size: 2^12 = 8192: just the buffer
             | 1, // Enabled
         );
-}
+    }
 
     // Constrain and Freeze clock
     info!("Setup RCC...                  ");
@@ -221,8 +216,8 @@ fn main() -> ! {
     let dma = dp.DMA2;
 
     // Configure DMA destination
-    let uart8_tdr = pac::UART8::ptr() as u32 + 0x28;
-    dma.st[1].par.write(|w| w.pa().bits(uart8_tdr));
+    let usart3_tdr = pac::USART3::ptr() as u32 + 0x28;
+    dma.st[1].par.write(|w| w.pa().bits(usart3_tdr));
 
     // Configure DMA parameters
     dma.st[1].cr.write(|w| {
@@ -254,7 +249,7 @@ fn main() -> ! {
     });
 
     let channel = 9; // DMAMUX channel 9 <-> DMA2 channel 1
-    dp.DMAMUX1.ccr[channel].write(|w| w.dmareq_id().uart8_tx_dma());
+    dp.DMAMUX1.ccr[channel].write(|w| w.dmareq_id().usart3_tx_dma());
 
     dp.DMAMUX1.cfr.write(|w| w.csof9().set_bit()); // Clear synchro overrun flag
 
