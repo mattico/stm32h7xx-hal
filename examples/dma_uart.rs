@@ -36,6 +36,30 @@ impl DmaState {
             self.dma.st[1].m0ar.write(|w| w.m0a().bits(grant.as_ptr() as u32));
             self.dma.st[1].ndtr.write(|w| w.ndt().bits(grant.len() as u16));
 
+            // Configure DMA destination
+            let usart3_tdr = pac::USART3::ptr() as u32 + 0x28;
+            self.dma.st[1].par.write(|w| w.pa().bits(usart3_tdr));
+
+            // Configure DMA parameters
+            self.dma.st[1].cr.write(|w| {
+                unsafe { w.bits(1 << 20) } // TRBUFF enable, required for UARTS
+                    .dir().memory_to_peripheral()
+                    .minc().incremented()
+                    .pinc().fixed()
+                    .msize().bits8()
+                    .psize().bits8()
+                    .pl().low()
+                    .teie().enabled()
+                    .dmeie().enabled()
+                    .tcie().enabled()
+                    .htie().disabled()
+                    .pfctrl().dma()
+                    .circ().disabled()
+            });
+
+            // Disable DMA FIFO
+            self.dma.st[1].fcr.write(|w| w.dmdis().enabled().feie().enabled());
+
             // Clear all interrupts for stream
             self.dma.lifcr.write(|w| {
                 w.cdmeif1().clear()
@@ -44,6 +68,12 @@ impl DmaState {
                     .ctcif1().clear()
                     .cteif1().clear()
             });
+
+            let channel = 9; // DMAMUX channel 9 <-> DMA2 channel 1
+            let mut dp = unsafe { pac::Peripherals::steal() };
+            dp.DMAMUX1.ccr[channel].write(|w| w.dmareq_id().usart3_tx_dma());
+
+            dp.DMAMUX1.cfr.write(|w| w.csof9().set_bit()); // Clear synchro overrun flag
 
             self.dma.st[1].cr.modify(|_, w| w.en().enabled()); // Enable stream
     
@@ -167,7 +197,9 @@ fn main() -> ! {
     // Constrain and Freeze clock
     info!("Setup RCC...                  ");
     let rcc = dp.RCC.constrain();
-    let ccdr = rcc.sys_ck(100.mhz()).freeze(vos, &dp.SYSCFG);
+    let ccdr = rcc.sys_ck(160.mhz())
+        .pclk1(80.mhz())
+        .freeze(vos, &dp.SYSCFG);
     let gpiod = dp.GPIOD.split(ccdr.peripheral.GPIOD);
 
     info!("Setup USART3...               ");
@@ -215,43 +247,7 @@ fn main() -> ! {
     ccdr.peripheral.DMA2.reset().enable();
     let dma = dp.DMA2;
 
-    // Configure DMA destination
-    let usart3_tdr = pac::USART3::ptr() as u32 + 0x28;
-    dma.st[1].par.write(|w| w.pa().bits(usart3_tdr));
 
-    // Configure DMA parameters
-    dma.st[1].cr.write(|w| {
-        unsafe { w.bits(1 << 20) } // TRBUFF enable, required for UARTS
-            .dir().memory_to_peripheral()
-            .minc().incremented()
-            .pinc().fixed()
-            .msize().bits8()
-            .psize().bits8()
-            .pl().low()
-            .teie().enabled()
-            .dmeie().enabled()
-            .tcie().enabled()
-            .htie().disabled()
-            .pfctrl().dma()
-            .circ().disabled()
-    });
-
-    // Disable DMA FIFO
-    dma.st[1].fcr.write(|w| w.dmdis().enabled().feie().enabled());
-
-    // Clear all interrupts for stream
-    dma.lifcr.write(|w| {
-        w.cdmeif1().clear()
-            .cfeif1().clear()
-            .chtif1().clear()
-            .ctcif1().clear()
-            .cteif1().clear()
-    });
-
-    let channel = 9; // DMAMUX channel 9 <-> DMA2 channel 1
-    dp.DMAMUX1.ccr[channel].write(|w| w.dmareq_id().usart3_tx_dma());
-
-    dp.DMAMUX1.cfr.write(|w| w.csof9().set_bit()); // Clear synchro overrun flag
 
     // Enable interrupt
     unsafe { pac::NVIC::unmask(pac::Interrupt::DMA2_STR1); }
