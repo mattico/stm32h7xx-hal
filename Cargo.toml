@@ -63,7 +63,7 @@ panic-semihosting = { version = "0.5.3" }
 cortex-m-semihosting = { version = "0.3.5" }
 usb-device = "0.2.5"
 usbd-serial = "0.1.0"
-bbqueue = { version = "0.4.10", features = ["thumbv6"] }
+bbqueue = { git = "https://github.com/mattico/bbqueue", branch = "init-address", features = ["thumbv6"] }
 
 [dev-dependencies.smoltcp]
 version = "0.6.0"

@@ -4,11 +4,10 @@
 #[path = "utilities/logger.rs"]
 mod logger;
 
-use bbqueue::{
-    BBBuffer, ConstBBBuffer, Consumer, GrantR, Producer, consts::*,
-};
+use bbqueue::{BBBuffer, ConstBBBuffer, Consumer, GrantR, Producer, PtrStorage};
 use core::fmt::{self, Write};
 use core::cell::RefCell;
+use core::ptr::NonNull;
 use cortex_m::interrupt::Mutex;
 use cortex_m_rt::entry;
 use log::info;
@@ -16,17 +15,25 @@ use stm32h7xx_hal::{pac, prelude::*};
 use stm32h7xx_hal::interrupt;
 use stm32h7xx_hal::rcc::ResetEnable;
 
-static QUEUE: BBBuffer<U8192> = BBBuffer(ConstBBBuffer::new());
+
+// DMA2 can only read from memory in its domain (D2), so we can't use regular stack/heap.
+// Use SRAM3 to store our queue instead.
+const SRAM_3: *mut u8 = 0x30040000 as *mut _;
+static QUEUE: BBBuffer<PtrStorage> = unsafe {
+    BBBuffer(ConstBBBuffer::new_ptr(
+        NonNull::new_unchecked(SRAM_3),
+        8192,
+    ))
+};
 
 static DMA: Mutex<RefCell<Option<DmaState>>> = Mutex::new(RefCell::new(None));
-
-static PROD: Mutex<RefCell<Option<Producer<'static, U8192>>>> = Mutex::new(RefCell::new(None));
+static PROD: Mutex<RefCell<Option<Producer<'static, PtrStorage>>>> = Mutex::new(RefCell::new(None));
 
 struct DmaState {
     dma: pac::DMA2,
     uart: pac::USART3,
-    cons: Consumer<'static, U8192>,
-    grant: Option<GrantR<'static, U8192>>,
+    cons: Consumer<'static, PtrStorage>,
+    grant: Option<GrantR<'static, PtrStorage>>,
 }
 
 impl DmaState {
@@ -42,7 +49,7 @@ impl DmaState {
 
             // Configure DMA parameters
             self.dma.st[1].cr.write(|w| {
-                unsafe { w.bits(1 << 20) } // TRBUFF enable, required for UARTS
+                unsafe { w.bits(1 << 20) } // TRBUFF enable, required for UARTs
                     .dir().memory_to_peripheral()
                     .minc().incremented()
                     .pinc().fixed()
@@ -68,16 +75,12 @@ impl DmaState {
                     .ctcif1().clear()
                     .cteif1().clear()
             });
-
-            let channel = 9; // DMAMUX channel 9 <-> DMA2 channel 1
-            let mut dp = unsafe { pac::Peripherals::steal() };
-            dp.DMAMUX1.ccr[channel].write(|w| w.dmareq_id().usart3_tx_dma());
-
-            dp.DMAMUX1.cfr.write(|w| w.csof9().set_bit()); // Clear synchro overrun flag
-
+            
             self.dma.st[1].cr.modify(|_, w| w.en().enabled()); // Enable stream
     
             self.uart.cr3.write(|w| w.dmat().enabled()); // Enable UART DMA
+
+            while self.dma.st[1].cr.read().en().is_disabled() {}
     
             // Store grant so interrupt can check on progress
             assert!(self.grant.is_none());
@@ -113,7 +116,7 @@ impl DmaState {
     }
 }
 
-pub fn write(data: &[u8]) -> Result<usize, bbqueue::Error> {
+pub fn write(data: &[u8]) -> nb::Result<usize, bbqueue::Error> {
     let (buffer_full, len) = cortex_m::interrupt::free(|cs| {
         let mut rc = PROD.borrow(cs).borrow_mut();
         let prod = rc.as_mut().unwrap();
@@ -179,17 +182,18 @@ fn main() -> ! {
     let pwr = dp.PWR.constrain();
     let vos = pwr.freeze();
 
+    info!("Setup MPU...                  ");
     // Disable cache for QUEUE so writes to it don't pollute dcache and actually complete before DMA reads
     // https://community.st.com/s/article/FAQ-DMA-is-not-working-on-STM32H7-devices
     unsafe {
         cp.MPU.ctrl.write(0b101); // Enable MPU and Default Memory Map
         cp.MPU.rnr.write(0); // Region 0
-        cp.MPU.rbar.write(&QUEUE as *const _ as u32); // SRAM3 Address
+        cp.MPU.rbar.write(SRAM_3 as u32); // SRAM3 Address
         cp.MPU.rasr.write(
             1 << 28 // Disable instruction fetch
             | 0b011 << 24 // RW/RW
             | 0b001000 << 16 // Regular memory, non-cacheable
-            | 12 << 1 // Size: 2^12 = 8192: just the buffer
+            | 12 << 1 // Size: 2^13 = 8192: just the buffer
             | 1, // Enabled
         );
     }
@@ -241,15 +245,18 @@ fn main() -> ! {
             .pce().disabled()
     });
 
-    info!("Setup DMA...                  ");
+    info!("Enable DMA...                  ");
 
     // Enable DMA2 clocks
     ccdr.peripheral.DMA2.reset().enable();
     let dma = dp.DMA2;
 
+    // The DMAMUX is used to connect DMA requests from peripherals, etc. to specific DMA channels.
+    let channel = 9; // DMAMUX channel 9 <-> DMA2 channel 1
+    dp.DMAMUX1.ccr[channel].write(|w| w.dmareq_id().usart3_tx_dma());
+    dp.DMAMUX1.cfr.write(|w| w.csof9().set_bit()); // Clear synchro overrun flag
 
-
-    // Enable interrupt
+    // Enable DMA interrupt
     unsafe { pac::NVIC::unmask(pac::Interrupt::DMA2_STR1); }
 
     let (prod, cons) = QUEUE.try_split().unwrap();
