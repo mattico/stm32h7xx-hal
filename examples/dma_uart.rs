@@ -116,7 +116,13 @@ impl DmaState {
     }
 }
 
+/// Writes the bytes to the DMA buffer. Returns the number of bytes written, or an error if 
+/// nothing could be written.
 pub fn write(data: &[u8]) -> nb::Result<usize, bbqueue::Error> {
+    if data.len() == 0 {
+        return Ok(0);
+    }
+
     let (buffer_full, len) = cortex_m::interrupt::free(|cs| {
         let mut rc = PROD.borrow(cs).borrow_mut();
         let prod = rc.as_mut().unwrap();
@@ -132,8 +138,8 @@ pub fn write(data: &[u8]) -> nb::Result<usize, bbqueue::Error> {
                     grant.commit(usize::MAX);
                     Ok((true, len))
                 }
-                Err(bbqueue::Error::InsufficientSize) => Ok((true, 0)),
-                Err(e) => Err(e),
+                Err(bbqueue::Error::InsufficientSize) => Err(nb::Error::WouldBlock),
+                Err(e) => Err(e.into()),
             }
         }
     })?;
@@ -156,14 +162,21 @@ pub fn write(data: &[u8]) -> nb::Result<usize, bbqueue::Error> {
     Ok(len)
 }
 
+/// Writes all of the data to the DMA buffer, blocking until it is complete.
+pub fn write_all(mut buf: &[u8]) -> Result<(), bbqueue::Error> {
+    while !buf.is_empty() {
+        let n = nb::block!(write(buf))?;
+        buf = &buf[n..];
+    }
+    Ok(())
+}
+
 pub struct Writer();
 
 impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        match write(s.as_bytes()) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(fmt::Error),
-        }
+        write_all(s.as_bytes()).map_err(|_| fmt::Error)?;
+        Ok(())
     }
 }
 
