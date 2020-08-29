@@ -1,3 +1,7 @@
+//! Demonstrates using a DMA memory-to-peripheral transfer to transmit data over USART 3.
+//! On an ST NUCLEO-H743ZI2 board USART3 is connected to the onboard ST-LINK's Virtual COM
+//! Port by default.
+
 #![no_main]
 #![no_std]
 
@@ -221,42 +225,11 @@ fn main() -> ! {
 
     info!("Setup USART3...               ");
 
-    // Configure UART pins
-    let _tx = gpiod.pd8.into_alternate_af7();
-    let _rx = gpiod.pd9.into_alternate_af7();
-
-    ccdr.peripheral.USART3.enable().reset();
-    let uart = dp.USART3;
-
-    // Assume it's configured to use PCLK1
-    let usart_ker_ck = ccdr.clocks.pclk1().0;
-
-    // Prescaler not used
-    let usart_ker_ck_presc = usart_ker_ck;
-    uart.presc.reset();
-
-    // Calculate baudrate divisor
-    let usartdiv = usart_ker_ck_presc / 115_200;
-    assert!(usartdiv <= 65_536);
-
-    // 16 times oversampling, OVER8 = 0
-    let brr = usartdiv as u16;
-    uart.brr.write(|w| w.brr().bits(brr));
-
-    // Set stop bits
-    uart.cr2.write(|w| w.stop().stop1());
-
-    // Enable transmission and configure frame
-    uart.cr1.write(|w| {
-        w.fifoen().set_bit() // FIFO mode enabled
-            .over8().oversampling16() // Oversampling by 16
-            .ue().enabled()
-            .te().enabled()
-            .re().disabled()
-            .m1().clear_bit()
-            .m0().bit8()
-            .pce().disabled()
-    });
+    // Configure UART
+    let tx = gpiod.pd8.into_alternate_af7();
+    let rx = gpiod.pd9.into_alternate_af7();
+    let uart = dp.USART3.serial((tx, rx), 115_200.bps(), ccdr.peripheral.USART3, &ccdr.clocks).unwrap();
+    let uart = uart.release(); // Get access to the raw peripheral after configuring
 
     info!("Enable DMA...                  ");
 
