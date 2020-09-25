@@ -118,6 +118,8 @@ pub use crate::stm32::interrupt;
 #[cfg(feature = "device-selected")]
 pub mod adc;
 #[cfg(feature = "device-selected")]
+pub mod backup_domain;
+#[cfg(feature = "device-selected")]
 pub mod dac;
 #[cfg(feature = "device-selected")]
 pub mod delay;
@@ -145,6 +147,8 @@ pub mod qei;
 pub mod qspi;
 #[cfg(feature = "device-selected")]
 pub mod rcc;
+#[cfg(feature = "device-selected")]
+pub mod rtc;
 #[cfg(feature = "device-selected")]
 pub mod rng;
 #[cfg(feature = "device-selected")]

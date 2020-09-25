@@ -66,6 +66,7 @@ impl PwrExt for PWR {
             supply_configuration: SupplyConfiguration::Default,
             #[cfg(feature = "revision_v")]
             enable_vos0: false,
+            enable_backup: false,
         }
     }
 }
@@ -79,6 +80,7 @@ pub struct Pwr {
     supply_configuration: SupplyConfiguration,
     #[cfg(feature = "revision_v")]
     enable_vos0: bool,
+    enable_backup: bool,
 }
 
 /// Voltage Scale
@@ -104,12 +106,18 @@ pub enum VoltageScale {
 /// longer be changed.
 pub struct PowerConfiguration {
     pub(crate) vos: VoltageScale,
+    pub(crate) backup: bool,
 }
 
 impl PowerConfiguration {
     /// Gets the `VoltageScale` which was configured by `Pwr::freeze()`.
     pub fn vos(&self) -> VoltageScale {
         self.vos
+    }
+
+    /// Returns `true` if the backup power domain was enabled by `Pwr::freeze()`.
+    pub fn backup(&self) -> bool {
+        self.backup
     }
 }
 
@@ -211,6 +219,11 @@ impl Pwr {
         self
     }
 
+    pub fn backup(mut self) -> Self {
+        self.enable_backup = true;
+        self
+    }
+
     pub fn freeze(self) -> PowerConfiguration {
         // NB. The lower bytes of CR3 can only be written once after
         // POR, and must be written with a valid combination. Refer to
@@ -285,6 +298,12 @@ impl Pwr {
             return PowerConfiguration {
                 vos: VoltageScale::Scale0,
             };
+        }
+
+        if self.enable_backup {
+            unsafe {
+                &(*RCC:ptr()).
+            }
         }
 
         PowerConfiguration {

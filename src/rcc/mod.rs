@@ -52,13 +52,13 @@
 //!     let dp = pac::Peripherals::take().unwrap();
 //!
 //!     let pwr = dp.PWR.constrain();
-//!     let pwrcfg = pwr.freeze();
+//!     let vos = pwr.freeze();
 //!
 //!     let rcc = dp.RCC.constrain();
 //!     let ccdr = rcc
 //!         .sys_ck(96.mhz())
 //!         .pclk1(48.mhz())
-//!         .freeze(pwrcfg, &dp.SYSCFG);
+//!         .freeze(vos, &dp.SYSCFG);
 //! ```
 //!
 //! A more complex example, involving the PLL:
@@ -67,7 +67,7 @@
 //!     let dp = pac::Peripherals::take().unwrap();
 //!
 //!     let pwr = dp.PWR.constrain();
-//!     let pwrcfg = pwr.freeze();
+//!     let vos = pwr.freeze();
 //!
 //!     let rcc = dp.RCC.constrain();
 //!     let ccdr = rcc
@@ -75,7 +75,7 @@
 //!         // For non-integer values, round up. `freeze` will never
 //!         // configure a clock faster than that specified.
 //!         .pll1_q_ck(33_333_334.hz())
-//!         .freeze(pwrcfg, &dp.SYSCFG);
+//!         .freeze(vos, &dp.SYSCFG);
 //! ```
 //!
 //! A much more complex example, indicative of real usage with a
@@ -85,7 +85,7 @@
 //!     let dp = pac::Peripherals::take().unwrap();
 //!
 //!     let pwr = dp.PWR.constrain();
-//!     let pwrcfg = pwr.freeze();
+//!     let vos = pwr.freeze();
 //!
 //!     let rcc = dp.RCC.constrain();
 //!     let ccdr = rcc
@@ -98,7 +98,7 @@
 //!         .pll3_p_ck(240.mhz()) // for LTDC
 //!         .pll3_q_ck(48.mhz()) // for LTDC
 //!         .pll3_r_ck(26_666_667.hz()) // Pixel clock for LTDC
-//!         .freeze(pwrcfg, &dp.SYSCFG);
+//!         .freeze(vos, &dp.SYSCFG);
 //!```
 //!
 //! # Peripherals
@@ -139,7 +139,6 @@
 //!
 #![deny(missing_docs)]
 
-use crate::pwr::PowerConfiguration;
 use crate::pwr::VoltageScale as Voltage;
 use crate::stm32::rcc::cfgr::SW_A as SW;
 use crate::stm32::rcc::cfgr::TIMPRE_A as TIMPRE;
@@ -164,6 +163,8 @@ use mco::{MCO1Config, MCO2Config, MCO1, MCO2};
 pub struct Config {
     hse: Option<u32>,
     bypass_hse: bool,
+    lse: Option<u32>,
+    bypass_lse: bool,
     sys_ck: Option<u32>,
     per_ck: Option<u32>,
     rcc_hclk: Option<u32>,
@@ -191,6 +192,8 @@ impl RccExt for RCC {
             config: Config {
                 hse: None,
                 bypass_hse: false,
+                lse: None,
+                bypass_lse: false,
                 sys_ck: None,
                 per_ck: None,
                 rcc_hclk: None,
@@ -316,6 +319,24 @@ impl Rcc {
     /// bypassing the XTAL driver.
     pub fn bypass_hse(mut self) -> Self {
         self.config.bypass_hse = true;
+        self
+    }
+
+    /// Uses LSE (external low-speed oscillator) instead of LSI (internal RC
+    /// oscillator) as the RTC clock source. Will result in a hang if an
+    /// external oscillator is not connected or it fails to start.
+    pub fn use_lse<F>(mut self, freq: F) -> Self
+    where
+        F: Into<Hertz>,
+    {
+        self.config.lse = Some(freq.into().0);
+        self
+    }
+
+    /// Use an external clock signal rather than a crystal oscillator,
+    /// bypassing the XTAL driver.
+    pub fn bypass_lse(mut self) -> Self {
+        self.config.bypass_lse = true;
         self
     }
 
@@ -560,11 +581,7 @@ impl Rcc {
     /// function may also panic if a clock specification can be
     /// achieved, but the mechanism for doing so is not yet
     /// implemented here.
-    pub fn freeze(
-        mut self,
-        pwrcfg: PowerConfiguration,
-        syscfg: &SYSCFG,
-    ) -> Ccdr {
+    pub fn freeze(mut self, vos: Voltage, syscfg: &SYSCFG) -> Ccdr {
         // We do not reset RCC here. This routine must assert when
         // the previous state of the RCC peripheral is unacceptable.
 
@@ -630,7 +647,7 @@ impl Rcc {
         // Refer to part datasheet "General operating conditions"
         // table for (rev V). We do not assert checks for earlier
         // revisions which may have lower limits.
-        let (sys_d1cpre_ck_max, rcc_hclk_max, pclk_max) = match pwrcfg.vos {
+        let (sys_d1cpre_ck_max, rcc_hclk_max, pclk_max) = match vos {
             Voltage::Scale0 => (480_000_000, 240_000_000, 120_000_000),
             Voltage::Scale1 => (400_000_000, 200_000_000, 100_000_000),
             Voltage::Scale2 => (300_000_000, 150_000_000, 75_000_000),
@@ -701,7 +718,7 @@ impl Rcc {
         // Start switching clocks here! ----------------------------------------
 
         // Flash setup
-        Self::flash_setup(rcc_aclk, pwrcfg.vos);
+        Self::flash_setup(rcc_aclk, vos);
 
         // Ensure CSI is on and stable
         rcc.cr.modify(|_, w| w.csion().on());
