@@ -228,28 +228,64 @@ impl RtcExt for RTC {
     }
 }
 
+pub struct Config {}
+
 pub struct Rtc {
     reg: RTC,
+    prec: rec::Rtc,
 }
 
-impl Rtc {
-    pub fn rtc(rtc: RTC, prec: rec::Rtc, clocks: &CoreClocks) -> Self {
-        // TODO: should we reset here?
-        let prec = prec.enable().reset();
+// TODO: ability to detect RTC still running after reset
 
+impl Rtc {
+    pub fn rtc(
+        rtc: RTC,
+        prec: rec::Rtc,
+        config: Config,
+        clocks: &CoreClocks,
+    ) -> Self {
+        let prec = prec.enable();
+
+        // TODO: default clock is NOCLOCK, should we try to auto-select in that case?
         let ker_ck = match prec.get_kernel_clk_mux() {
             rec::RtcClkSel::NOCLOCK => None,
             rec::RtcClkSel::LSI => clocks.lsi_ck(),
             rec::RtcClkSel::LSE => clocks.lse_ck(),
-            rec::RtcClkSel::HSE => clocks.hse_ck().map(|x| Hertz(x.0 / 8)),
+            rec::RtcClkSel::HSE => clocks.hse_ck().map(|x| Hertz(x.0 / 32)),
         }
         .expect("rtc_ker_ck not running!");
+        let ker_ck = ker_ck.0;
+
+        assert!(ker_ck <= (1 << 22), "rtc_ker_ck too fast for RTC prescaler");
 
         // Disable register write protection
-        rtc.wpr.write(|w| w.bits(0xCA));
-        rtc.wpr.write(|w| w.bits(0x53));
+        rtc.wpr.write(|w| unsafe { w.bits(0xCA) });
+        rtc.wpr.write(|w| unsafe { w.bits(0x53) });
 
-        Self { reg: rtc }
+        // Enter initialization mode
+        rtc.isr.modify(|_, w| w.init().set_bit());
+        while rtc.isr.read().initf().bit_is_clear() {}
+
+        // Configure prescaler for 1Hz clock
+        // Want to maximize a_pre_max for power reasons, though it reduces the
+        // subsecond precision.
+        let total_div = ker_ck;
+        let a_pre_max = 1 << 7;
+        let s_pre_max = 1 << 15;
+
+        let (a_pre, s_pre) = if total_div <= a_pre_max {
+            (total_div, 0)
+        } else if total_div % a_pre_max == 0 {
+            (a_pre_max, total_div / a_pre_max)
+        } else {
+            todo!()
+        };
+
+        rtc.prer.write(|w| unsafe {
+            w.prediv_s().bits(s_pre as u16).prediv_a().bits(a_pre as u8)
+        });
+
+        Self { reg: rtc, prec }
     }
 
     pub fn read_backup_reg(&self, reg: u8) -> u32 {
@@ -262,17 +298,21 @@ impl Rtc {
     }
 
     pub fn date(&self) -> Date {
-        Date { data: self.reg.dr.read().bits() }
+        Date {
+            data: self.reg.dr.read().bits(),
+        }
     }
 
     pub fn time(&self) -> Time {
-        Time { data: self.reg.tr.read().bits() }
+        Time {
+            data: self.reg.tr.read().bits(),
+        }
     }
 
     pub fn subseconds(&self) -> f32 {
         let ss = self.reg.ssr.read().bits() as f32;
         let prediv_s = self.reg.prer.read().prediv_s().bits() as f32;
-        (prediv_s - ss) / (prediv_s + 1.0) 
+        (prediv_s - ss) / (prediv_s + 1.0)
     }
 
     pub fn listen(&mut self, event: Event) {
