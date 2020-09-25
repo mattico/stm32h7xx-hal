@@ -279,6 +279,9 @@ impl Pwr {
         self.rb.d3cr.write(|w| unsafe { w.vos().bits(0b11) });
         while self.rb.d3cr.read().vosrdy().bit_is_clear() {}
 
+        #[allow(unused_mut)]
+        let mut vos = VoltageScale::Scale1;
+
         // Enable overdrive for maximum clock
         // Syscfgen required to set enable overdrive
         #[cfg(feature = "revision_v")]
@@ -295,19 +298,18 @@ impl Pwr {
                 &(*SYSCFG::ptr()).pwrcr.modify(|_, w| w.oden().bits(1))
             };
             while self.rb.d3cr.read().vosrdy().bit_is_clear() {}
-            return PowerConfiguration {
-                vos: VoltageScale::Scale0,
-            };
+            vos = VoltageScale::Scale0;
         }
 
         if self.enable_backup {
-            unsafe {
-                &(*RCC:ptr()).
-            }
+            self.rb.cr1.modify(|_, w| w.dbp().set_bit());
+            self.rb.cr2.modify(|_, w| w.bren().set_bit());
+            while self.rb.cr2.read().brrdy().bit_is_clear() {}
         }
 
         PowerConfiguration {
-            vos: VoltageScale::Scale1,
+            vos,
+            backup: self.enable_backup,
         }
     }
 }

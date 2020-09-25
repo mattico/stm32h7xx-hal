@@ -252,6 +252,7 @@ pub struct Ccdr {
 const HSI: u32 = 64_000_000; // Hz
 const CSI: u32 = 4_000_000; // Hz
 const HSI48: u32 = 48_000_000; // Hz
+const LSI: u32 = 32_000; // Hz
 
 /// Setter defintion for pclk 1 - 4
 macro_rules! pclk_setter {
@@ -325,6 +326,7 @@ impl Rcc {
     /// Uses LSE (external low-speed oscillator) instead of LSI (internal RC
     /// oscillator) as the RTC clock source. Will result in a hang if an
     /// external oscillator is not connected or it fails to start.
+    /// The backup domain must be enabled for this to have an effect.
     pub fn use_lse<F>(mut self, freq: F) -> Self
     where
         F: Into<Hertz>,
@@ -839,6 +841,25 @@ impl Rcc {
         });
         while syscfg.cccsr.read().ready().bit_is_clear() {}
 
+        // LSE
+        let lse_ck = match self.config.lse {
+            Some(lse) if pwrcfg.backup => {
+                // Ensure LSE is on and stable
+                rcc.bdcr.modify(|_, w| {
+                    w.lseon().on().lsebyp().bit(self.config.bypass_lse)
+                });
+                while rcc.bdcr.read().lserdy().is_not_ready() {}
+
+                Some(Hertz(lse))
+            }
+            _ => None,
+        };
+
+        // Enable LSI for RTC, IWDG, or AWU
+        let lsi = LSI;
+        rcc.csr.modify(|_, w| w.lsion().on());
+        while rcc.csr.read().lsirdy().is_not_ready() {}
+
         // Return frozen clock configuration
         Ccdr {
             clocks: CoreClocks {
@@ -856,6 +877,8 @@ impl Rcc {
                 hsi48_ck: Some(Hertz(hsi48)),
                 per_ck: Some(Hertz(per_ck)),
                 hse_ck,
+                lse_ck,
+                lsi_ck: Some(Hertz(lsi)),
                 mco1_ck,
                 mco2_ck,
                 pll1_p_ck,
