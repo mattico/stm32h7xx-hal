@@ -66,7 +66,6 @@ impl PwrExt for PWR {
             supply_configuration: SupplyConfiguration::Default,
             #[cfg(feature = "revision_v")]
             enable_vos0: false,
-            enable_backup: false,
         }
     }
 }
@@ -80,7 +79,6 @@ pub struct Pwr {
     supply_configuration: SupplyConfiguration,
     #[cfg(feature = "revision_v")]
     enable_vos0: bool,
-    enable_backup: bool,
 }
 
 /// Voltage Scale
@@ -106,7 +104,7 @@ pub enum VoltageScale {
 /// longer be changed.
 pub struct PowerConfiguration {
     pub(crate) vos: VoltageScale,
-    pub backup: Option<crate::rcc::Backup>,
+    pub backup: crate::backup::Backup,
 }
 
 impl PowerConfiguration {
@@ -214,11 +212,6 @@ impl Pwr {
         self
     }
 
-    pub fn backup(mut self) -> Self {
-        self.enable_backup = true;
-        self
-    }
-
     pub fn freeze(self) -> PowerConfiguration {
         // NB. The lower bytes of CR3 can only be written once after
         // POR, and must be written with a valid combination. Refer to
@@ -296,14 +289,9 @@ impl Pwr {
             vos = VoltageScale::Scale0;
         }
 
-        let backup = if self.enable_backup {
-            self.rb.cr1.modify(|_, w| w.dbp().set_bit());
-            self.rb.cr2.modify(|_, w| w.bren().set_bit());
-            while self.rb.cr2.read().brrdy().bit_is_clear() {}
-            Some(crate::rcc::Backup { rb: self.rb })
-        } else {
-            None
-        };
+        // Disable backup power domain write protection
+        self.rb.cr1.modify(|_, w| w.dbp().set_bit());
+        let backup = crate::backup::Backup { rb: self.rb };
 
         PowerConfiguration {
             vos,

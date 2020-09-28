@@ -118,6 +118,8 @@ pub use crate::stm32::interrupt;
 #[cfg(feature = "device-selected")]
 pub mod adc;
 #[cfg(feature = "device-selected")]
+pub mod backup;
+#[cfg(feature = "device-selected")]
 pub mod dac;
 #[cfg(feature = "device-selected")]
 pub mod delay;

@@ -139,8 +139,8 @@
 //!
 #![deny(missing_docs)]
 
-use crate::pwr::VoltageScale as Voltage;
 use crate::pwr::PowerConfiguration;
+use crate::pwr::VoltageScale as Voltage;
 use crate::stm32::rcc::cfgr::SW_A as SW;
 use crate::stm32::rcc::cfgr::TIMPRE_A as TIMPRE;
 use crate::stm32::rcc::d1ccipr::CKPERSEL_A as CKPERSEL;
@@ -152,12 +152,10 @@ use crate::time::Hertz;
 mod core_clocks;
 mod pll;
 pub mod rec;
-mod backup;
 
 pub use core_clocks::CoreClocks;
 pub use pll::{PllConfig, PllConfigStrategy};
 pub use rec::{PeripheralREC, ResetEnable};
-pub use backup::{Backup};
 
 mod mco;
 use mco::{MCO1Config, MCO2Config, MCO1, MCO2};
@@ -166,8 +164,6 @@ use mco::{MCO1Config, MCO2Config, MCO1, MCO2};
 pub struct Config {
     hse: Option<u32>,
     bypass_hse: bool,
-    // lse: Option<u32>,
-    // bypass_lse: bool,
     sys_ck: Option<u32>,
     per_ck: Option<u32>,
     rcc_hclk: Option<u32>,
@@ -195,8 +191,6 @@ impl RccExt for RCC {
             config: Config {
                 hse: None,
                 bypass_hse: false,
-                lse: None,
-                bypass_lse: false,
                 sys_ck: None,
                 per_ck: None,
                 rcc_hclk: None,
@@ -323,25 +317,6 @@ impl Rcc {
     /// bypassing the XTAL driver.
     pub fn bypass_hse(mut self) -> Self {
         self.config.bypass_hse = true;
-        self
-    }
-
-    /// Uses LSE (external low-speed oscillator) instead of LSI (internal RC
-    /// oscillator) as the RTC clock source. Will result in a hang if an
-    /// external oscillator is not connected or it fails to start.
-    /// The backup domain must be enabled for this to have an effect.
-    pub fn use_lse<F>(mut self, freq: F) -> Self
-    where
-        F: Into<Hertz>,
-    {
-        self.config.lse = Some(freq.into().0);
-        self
-    }
-
-    /// Use an external clock signal rather than a crystal oscillator,
-    /// bypassing the XTAL driver.
-    pub fn bypass_lse(mut self) -> Self {
-        self.config.bypass_lse = true;
         self
     }
 
@@ -586,7 +561,11 @@ impl Rcc {
     /// function may also panic if a clock specification can be
     /// achieved, but the mechanism for doing so is not yet
     /// implemented here.
-    pub fn freeze(mut self, pwrcfg: PowerConfiguration, syscfg: &SYSCFG) -> Ccdr {
+    pub fn freeze(
+        mut self,
+        pwrcfg: PowerConfiguration,
+        syscfg: &SYSCFG,
+    ) -> Ccdr {
         // We do not reset RCC here. This routine must assert when
         // the previous state of the RCC peripheral is unacceptable.
 
@@ -631,6 +610,11 @@ impl Rcc {
 
         let csi = CSI;
         let hsi48 = HSI48;
+
+        // Enable LSI for RTC, IWDG, AWU, or MCO2
+        let lsi = LSI;
+        rcc.csr.modify(|_, w| w.lsion().on());
+        while rcc.csr.read().lsirdy().is_not_ready() {}
 
         // per_ck from HSI by default
         let (per_ck, ckpersel) =
@@ -715,7 +699,7 @@ impl Rcc {
             MCO2::HSE => self.config.hse.unwrap(),
             MCO2::PLL1_P => pll1_p_ck.unwrap().0,
             MCO2::CSI => CSI,
-            MCO2::LSI => unimplemented!(),
+            MCO2::LSI => LSI,
         };
         let (mco_2_pre, mco2_ck) =
             self.config.mco2.calculate_prescaler(mco2_in);
@@ -844,22 +828,6 @@ impl Rcc {
         });
         while syscfg.cccsr.read().ready().bit_is_clear() {}
 
-        // LSE
-        let lse_ck = self.config.lse.map(|lse| {
-            // Ensure LSE is on and stable
-            rcc.bdcr.modify(|_, w| {
-                w.lseon().on().lsebyp().bit(self.config.bypass_lse)
-            });
-            while rcc.bdcr.read().lserdy().is_not_ready() {}
-
-            Some(Hertz(lse))
-        });
-
-        // Enable LSI for RTC, IWDG, or AWU
-        let lsi = LSI;
-        rcc.csr.modify(|_, w| w.lsion().on());
-        while rcc.csr.read().lsirdy().is_not_ready() {}
-
         // Return frozen clock configuration
         Ccdr {
             clocks: CoreClocks {
@@ -875,10 +843,9 @@ impl Rcc {
                 csi_ck: Some(Hertz(csi)),
                 hsi_ck: Some(Hertz(hsi)),
                 hsi48_ck: Some(Hertz(hsi48)),
+                lsi_ck: Some(Hertz(lsi)),
                 per_ck: Some(Hertz(per_ck)),
                 hse_ck,
-                lse_ck,
-                lsi_ck: Some(Hertz(lsi)),
                 mco1_ck,
                 mco2_ck,
                 pll1_p_ck,

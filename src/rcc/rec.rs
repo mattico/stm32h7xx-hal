@@ -98,19 +98,14 @@ impl Rcc {
 //
 // https://crates.io/crates/paste
 macro_rules! peripheral_reset_and_enable_control {
-    (
-        $($AXBn:ident, $axb_doc:expr => [
-            $(
-                $( #[ $pmeta:meta ] )*
-                    $p:ident
-                    $([ kernel $clk:ident: $pk:ident $(($Variant:ident))* $ccip:ident $clk_doc:expr ])*
-                    $([ group clk: $pk_g:ident $( $(($Variant_g:ident))* $ccip_g:ident $clk_doc_g:expr )* ])*
-            ),*
-            $(
-                +single: $( #[ $psmeta:meta ] )* $ps:ident
-            ),*
-        ];)+
-    ) => {
+    ($($AXBn:ident, $axb_doc:expr => [
+        $(
+            $( #[ $pmeta:meta ] )*
+                $p:ident
+                $([ kernel $clk:ident: $pk:ident $(($Variant:ident))* $ccip:ident $clk_doc:expr ])*
+                $([ group clk: $pk_g:ident $( $(($Variant_g:ident))* $ccip_g:ident $clk_doc_g:expr )* ])*
+        ),*
+    ];)+) => {
         paste::item! {
             /// Peripheral Reset and Enable Control
             #[allow(non_snake_case)]
@@ -121,11 +116,6 @@ macro_rules! peripheral_reset_and_enable_control {
                         #[allow(missing_docs)]
                         $( #[ $pmeta ] )*
                         pub [< $p:upper >]: $p,
-                    )*
-                    $(
-                        #[allow(missing_docs)]
-                        $( #[ $psmeta ] )*
-                        pub [< $ps:upper >]: $ps,
                     )*
                 )+
             }
@@ -143,12 +133,6 @@ macro_rules! peripheral_reset_and_enable_control {
                             $(
                                 $( #[ $pmeta ] )*
                                 [< $p:upper >]: $p {
-                                    _marker: PhantomData,
-                                },
-                            )*
-                            $(
-                                $( #[ $psmeta ] )*
-                                [< $ps:upper >]: $ps {
                                     _marker: PhantomData,
                                 },
                             )*
@@ -417,85 +401,4 @@ peripheral_reset_and_enable_control! {
             [kernel clk_b: Sai4B(Variant) d3ccip
             "Sub-Block B of SAI4"]
     ];
-
-    // BD, "Backup Domain peripherals" => [
-    //     +single: Rtc
-    // ];
 }
-
-// // The Backup domain is all fit into a single register, so implement Rtc manually.
-
-// /// Owned ability to Reset, Enable and Disable peripheral
-// pub struct Rtc {
-//     pub(crate) _marker: PhantomData<*const ()>,
-// }
-
-// unsafe impl Send for Rtc {}
-
-// impl ResetEnable for Rtc {
-//     #[inline(always)]
-//     fn enable(self) -> Self {
-//         // unsafe: Owned exclusive access to this bitfield
-//         interrupt::free(|_| {
-//             let enr = unsafe {
-//                 &(*RCC::ptr()).bdcr
-//             };
-//             enr.modify(|_, w| w.rtcen().set_bit());
-//         });
-//         self
-//     }
-//     #[inline(always)]
-//     fn disable(self) -> Self {
-//         // unsafe: Owned exclusive access to this bitfield
-//         interrupt::free(|_| {
-//             let enr = unsafe {
-//                 &(*RCC::ptr()).bdcr
-//             };
-//             enr.modify(|_, w| w.rtcen().clear_bit());
-//         });
-//         self
-//     }
-//     #[inline(always)]
-//     fn reset(self) -> Self {
-//         // unsafe: Owned exclusive access to this bitfield
-//         interrupt::free(|_| {
-//             let rstr = unsafe {
-//                 &(*RCC::ptr()).bdcr
-//             };
-//             rstr.modify(|_, w| w.bdrst().set_bit());
-//         });
-//         self
-//     }
-// }
-
-/// RTC kernel clock source selection
-// pub type RtcClkSel = rcc::bdcr::RTCSEL_A;
-
-// impl Rtc {
-//     #[inline(always)]
-//     /// Modify a kernel clock for this
-//     /// peripheral. See RM0433 Section 8.5.8.
-//     ///
-//     /// **NOTE**: This can only be written one time.
-//     /// The peripheral can be reset to clear this,
-//     /// then it can be written one more time.
-//     pub fn kernel_clk_mux(self, sel: RtcClkSel) -> Self {
-//         // unsafe: Owned exclusive access to this bitfield
-//         interrupt::free(|_| {
-//             let ccip = unsafe {
-//                 &(*RCC::ptr()).bdcr
-//             };
-//             ccip.modify(|_, w| w.rtcsel().variant(sel));
-//         });
-//         self
-//     }
-
-//     /// Return the current kernel clock selection
-//     pub fn get_kernel_clk_mux(&self) -> RtcClkSel {
-//         // unsafe: We only read from this bitfield
-//         let ccip = unsafe {
-//             &(*RCC::ptr()).bdcr
-//         };
-//         ccip.read().rtcsel().variant()
-//     }
-// }
