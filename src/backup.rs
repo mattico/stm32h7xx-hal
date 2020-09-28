@@ -1,14 +1,9 @@
-
-use core::marker::PhantomData;
-use cortex_m::interrupt;
-
-use crate::stm32::{PWR, RCC};
+#[cfg(feature = "rtc")]
 use crate::rcc::rec::ResetEnable;
 
 pub struct Backup {
-    pub(crate) rb: PWR,
     #[cfg(feature = "rtc")]
-    pub rtc: Rtc,
+    pub RTC: Rtc,
 }
 
 /// Owned ability to Reset, Enable and Disable peripheral
