@@ -14,14 +14,11 @@ pub struct Backup {
 }
 
 impl Backup {
-    pub fn reset(&mut self) {
-        interrupt::free(|_| {
-            let rstr = unsafe {
-                &(*RCC::ptr()).bdcr
-            };
-            rstr.modify(|_, w| w.bdrst().set_bit());
-            while rstr.read().bdrst().bit_is_set() {}
-        });
+    pub(crate) bdcr(&mut self) -> () {
+        unsafe {
+            &(*RCC::ptr()).bdcr
+        }
     }
+    
 }
 

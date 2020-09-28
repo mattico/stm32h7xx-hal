@@ -195,8 +195,8 @@ impl RccExt for RCC {
             config: Config {
                 hse: None,
                 bypass_hse: false,
-                // lse: None,
-                // bypass_lse: false,
+                lse: None,
+                bypass_lse: false,
                 sys_ck: None,
                 per_ck: None,
                 rcc_hclk: None,
@@ -326,24 +326,24 @@ impl Rcc {
         self
     }
 
-    // /// Uses LSE (external low-speed oscillator) instead of LSI (internal RC
-    // /// oscillator) as the RTC clock source. Will result in a hang if an
-    // /// external oscillator is not connected or it fails to start.
-    // /// The backup domain must be enabled for this to have an effect.
-    // pub fn use_lse<F>(mut self, freq: F) -> Self
-    // where
-    //     F: Into<Hertz>,
-    // {
-    //     self.config.lse = Some(freq.into().0);
-    //     self
-    // }
+    /// Uses LSE (external low-speed oscillator) instead of LSI (internal RC
+    /// oscillator) as the RTC clock source. Will result in a hang if an
+    /// external oscillator is not connected or it fails to start.
+    /// The backup domain must be enabled for this to have an effect.
+    pub fn use_lse<F>(mut self, freq: F) -> Self
+    where
+        F: Into<Hertz>,
+    {
+        self.config.lse = Some(freq.into().0);
+        self
+    }
 
-    // /// Use an external clock signal rather than a crystal oscillator,
-    // /// bypassing the XTAL driver.
-    // pub fn bypass_lse(mut self) -> Self {
-    //     self.config.bypass_lse = true;
-    //     self
-    // }
+    /// Use an external clock signal rather than a crystal oscillator,
+    /// bypassing the XTAL driver.
+    pub fn bypass_lse(mut self) -> Self {
+        self.config.bypass_lse = true;
+        self
+    }
 
     /// Set input frequency to the SCGU
     pub fn sys_ck<F>(mut self, freq: F) -> Self
@@ -845,18 +845,15 @@ impl Rcc {
         while syscfg.cccsr.read().ready().bit_is_clear() {}
 
         // LSE
-        // let lse_ck = match self.config.lse {
-        //     Some(lse) if pwrcfg.backup => { // TODO: make this less confusing
-        //         // Ensure LSE is on and stable
-        //         rcc.bdcr.modify(|_, w| {
-        //             w.lseon().on().lsebyp().bit(self.config.bypass_lse)
-        //         });
-        //         while rcc.bdcr.read().lserdy().is_not_ready() {}
+        let lse_ck = self.config.lse.map(|lse| {
+            // Ensure LSE is on and stable
+            rcc.bdcr.modify(|_, w| {
+                w.lseon().on().lsebyp().bit(self.config.bypass_lse)
+            });
+            while rcc.bdcr.read().lserdy().is_not_ready() {}
 
-        //         Some(Hertz(lse))
-        //     }
-        //     _ => None,
-        // };
+            Some(Hertz(lse))
+        });
 
         // Enable LSI for RTC, IWDG, or AWU
         let lsi = LSI;
@@ -880,7 +877,7 @@ impl Rcc {
                 hsi48_ck: Some(Hertz(hsi48)),
                 per_ck: Some(Hertz(per_ck)),
                 hse_ck,
-                // lse_ck,
+                lse_ck,
                 lsi_ck: Some(Hertz(lsi)),
                 mco1_ck,
                 mco2_ck,

@@ -207,6 +207,7 @@ use crate::rcc::rec::{self, ResetEnable};
 use crate::rcc::CoreClocks;
 use crate::stm32::RTC;
 use crate::time::Hertz;
+use crate::rcc::backup::Backup;
 
 pub enum Event {
     AlarmA,
@@ -218,11 +219,21 @@ pub enum Event {
     Tamper3,
 }
 
-pub struct Config {}
+pub enum RtcClkSel {
+    /// LSE (Low-Speed External)
+    Lse,
+    /// LSI (Low-Speed Internal)
+    Lsi,
+    /// HSE Divided by 32
+    Hse,
+}
+
+pub struct Config {
+    ker_ck: RtcClkSel,
+}
 
 pub struct Rtc {
     reg: RTC,
-    prec: rec::Rtc,
 }
 
 // TODO: ability to detect RTC still running after reset
@@ -230,21 +241,23 @@ pub struct Rtc {
 impl Rtc {
     pub fn rtc(
         rtc: RTC,
-        prec: rec::Rtc,
         config: Config,
+        backup: &mut Backup,
         clocks: &CoreClocks,
     ) -> Self {
-        let prec = prec.enable();
 
-        // TODO: default clock is NOCLOCK, should we try to auto-select in that case?
-        let ker_ck = match prec.get_kernel_clk_mux() {
-            rec::RtcClkSel::NOCLOCK => None,
+    }
+
+    pub fn initialize(self) -> self {
+        // TODO: this can only be set once, then reset with BDCR
+        backup.bdcr().modify(|_, w| w.rtcsel().variant(sel));
+
+        let ker_ck = match config.ker_ck {
             rec::RtcClkSel::LSI => clocks.lsi_ck(),
-            //rec::RtcClkSel::LSE => clocks.lse_ck(),
+            rec::RtcClkSel::LSE => clocks.lse_ck(),
             rec::RtcClkSel::HSE => clocks.hse_ck().map(|x| Hertz(x.0 / 32)),
         }
-        .expect("rtc_ker_ck not running!");
-        let ker_ck = ker_ck.0;
+        .expect("rtc_ker_ck not running!").0;
 
         assert!(ker_ck <= (1 << 22), "rtc_ker_ck too fast for RTC prescaler");
 
@@ -275,7 +288,7 @@ impl Rtc {
             w.prediv_s().bits(s_pre as u16).prediv_a().bits(a_pre as u8)
         });
 
-        Self { reg: rtc, prec }
+        Self { reg: rtc }
     }
 
     pub fn read_backup_reg(&self, reg: u8) -> u32 {
