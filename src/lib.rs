@@ -147,7 +147,7 @@ pub mod qei;
 pub mod qspi;
 #[cfg(feature = "device-selected")]
 pub mod rcc;
-#[cfg(feature = "device-selected")]
+#[cfg(all(feature = "device-selected", feature = "rtc"))]
 pub mod rtc;
 #[cfg(feature = "device-selected")]
 pub mod rng;

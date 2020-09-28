@@ -7,16 +7,20 @@ use crate::rcc::rec::ResetEnable;
 
 pub struct Backup {
     pub(crate) rb: PWR,
+    #[cfg(feature = "rtc")]
     pub rtc: Rtc,
 }
 
 /// Owned ability to Reset, Enable and Disable peripheral
+#[cfg(feature = "rtc")]
 pub struct Rtc {
     pub(crate) _marker: PhantomData<*const ()>,
 }
 
+#[cfg(feature = "rtc")]
 unsafe impl Send for Rtc {}
 
+#[cfg(feature = "rtc")]
 impl ResetEnable for Rtc {
     #[inline(always)]
     fn enable(self) -> Self {
@@ -55,8 +59,10 @@ impl ResetEnable for Rtc {
 }
 
 /// RTC kernel clock source selection
+#[cfg(feature = "rtc")]
 pub type RtcClkSel = crate::stm32::rcc::bdcr::RTCSEL_A;
 
+#[cfg(feature = "rtc")]
 impl Rtc {
     /// Returns true if the RTC is enabled.
     pub fn is_enabled(&self) -> bool {

@@ -20,7 +20,7 @@ readme = "README.md"
 exclude = [".gitignore"]
 
 [package.metadata.docs.rs]
-features = ["stm32h743", "rt", "quadspi", "sdmmc", "fmc", "ethernet", "phy_lan8742a"]
+features = ["stm32h743v", "rt", "quadspi", "sdmmc", "fmc", "ethernet", "phy_lan8742a", "rtc"]
 targets = ["thumbv7em-none-eabihf"]
 
 [dependencies]
@@ -81,7 +81,7 @@ sdmmc = ["sdio-host"]
 ethernet = ["smoltcp"]
 phy_ksz8081r = []
 phy_lan8742a = []
-time-rs = ["time"]
+rtc = ["time"]
 rt = ["stm32h7/rt"]
 stm32h742 = ["stm32h7/stm32h743", "device-selected", "singlecore"]
 stm32h743 = ["stm32h7/stm32h743", "device-selected", "singlecore"]
@@ -142,3 +142,7 @@ required-features = ["phy_lan8742a", "rt", "stm32h747cm7", "ethernet"]
 [[example]]
 name = "ethernet-nucleo-h743zi2"
 required-features = ["phy_lan8742a", "rt", "revision_v", "stm32h743v", "ethernet"]
+
+[[example]]
+name = "rtc"
+required-features = ["rt", "rtc"]

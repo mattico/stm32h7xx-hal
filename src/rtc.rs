@@ -1,9 +1,6 @@
 //! Real-Time Clock
-//!
-//! 
-//! ```rust
-//! 
-//! ```
+
+use time;
 
 use crate::backup;
 use crate::rcc::rec::ResetEnable;
@@ -299,18 +296,30 @@ impl Rtc {
         while self.reg.isr.read().rsf().bit_is_clear() {}
     }
 
-    pub fn date(&self) -> Date {
+    pub fn date(&self) -> time::Date {
         self.wait_for_sync();  
-        Date {
-            data: self.reg.dr.read().bits(),
-        }
+        let data = self.reg.dr.read();
+        let year = 2000 + data.yt().bits() * 10 + data.yu().bits();
+        let month = data.mt().bits() * 10 + data.mu().bits();
+        let day = data.dt().bits() * 10 + data.du().bits();
+        time::Date::try_from_ymd(year, month, day).expect("Invalid data in RTC date register")
     }
 
-    pub fn time(&self) -> Time {
+    pub fn time(&self) -> time::Time {
         self.wait_for_sync();
-        Time {
-            data: self.reg.tr.read().bits(),
+        let data = self.reg.tr.read();
+        let mut hour = data.ht().bits() * 10 + data.hu().bits();
+        if data.pm().bit_is_set() {
+            hour += 12;
         }
+        let minute = data.mt().bits() * 10 + data.mu().bits();
+        let second = data.st().bits() * 10 + data.su().bits();
+        let micro = self.subsec_micros();
+        time::Time::try_from_hms_micro(hour, minute, second, micro).expect("Invalid data in RTC time register")
+    }
+
+    pub fn date_time(&self) -> time::PrimitiveDateTime {
+        time::PrimitiveDateTime::new(self.date(), self.time())
     }
 
     /// Returns the fraction of seconds that have occurred since the last second tick.
@@ -334,19 +343,93 @@ impl Rtc {
         ((prediv_s - ss) * microseconds_in_second) / (prediv_s + 1)
     }
 
-    /// Returns the raw value of the synchronous subsecond counter. This counts
-    /// up to `self.subsec_res()` then resets to zero once per second.
+    /// Returns the raw value of the synchronous subsecond counter
+    ///
+    /// This counts up to `self.subsec_res()` then resets to zero once per second.
     pub fn subsec_raw(&self) -> u16 {
         self.wait_for_sync();
         self.reg.ssr.read().ss().bits()
     }
 
-    /// Returns the resolution of subsecond values. The RTC counter increments
-    /// this number of times per second.
+    /// Returns the resolution of subsecond values
+    ///
+    /// The RTC counter increments this number of times per second.
     pub fn subsec_res(&self) -> u16 {
         self.reg.prer.read().prediv_s().bits()
     }
+    
+    /// Configures the wakeup timer to trigger periodically after `interval` seconds
+    ///
+    /// **NOTE:** Panics if interval is greater than 2^17-1
+    pub fn enable_wakeup(&mut self, interval: u32) {
+        self.reg.cr.modify(|_, w| w.wute().clear_bit());
+        self.reg.isr.modify(|_, w| w.wutf().clear_bit());
+        while self.reg.isr.read().wutwf().bit_is_clear() {}
 
+        if interval > 1 << 16 {
+            self.reg.cr.modify(|_, w| w.wucksel().bits(0b110));
+            let interval: u16 = (interval - 1 << 16).try_into().expect("Interval was too large for wakeup timer");
+            self.reg.wutr.write(|w| w.wut().bits(interval));
+        } else {
+            self.reg.cr.modify(|_, w| w.wucksel().bits(0b110));
+            let interval: u16 = interval.try_into().expect("Interval was too large for wakeup timer");
+            self.reg.wutr.write(|w| w.wut().bits(interval));
+        }
+
+        self.reg.cr.modify(|_, w| w.wute().set_bit());
+    }
+
+    pub fn disable_wakeup(&mut self) {
+        self.reg.cr.modify(|_, w| w.wute().clear_bit());
+        self.reg.cr.modify(|_, w| w.wutf().clear_bit());
+    }
+
+    /// Configures the timestamp to be captured when the RTC switches to Vbat power
+    pub fn enable_vbat_timestamp(&mut self) {
+        self.reg.cr.modify(|_, w| w.tse().clear_bit());
+        self.reg.isr.modify(|_, w| w.tsf().clear_bit());
+        self.reg.cr.modify(|_, w| w.itse().set_bit());
+        self.reg.cr.modify(|_, w| w.tse().set_bit());
+    }
+
+    /// Disables the timestamp
+    pub fn disable_timestamp(&mut self) {
+        self.reg.cr.modify(|_, w| w.tse().clear_bit());
+        self.reg.isr.modify(|_, w| w.tsf().clear_bit());
+    }
+
+    // TODO: Timestamp overflow flag
+    /// Reads the stored value of the timestamp if present
+    ///
+    /// Clears the timestamp interrupt flags.
+    pub fn read_timestamp(&self) -> Option<time::PrimitiveDateTime> {
+        if self.reg.isr.read().tsf().bit_is_set() {
+            let data = self.reg.dr.read();
+            let year = 2000 + data.yt().bits() * 10 + data.yu().bits();
+            let month = data.mt().bits() * 10 + data.mu().bits();
+            let day = data.dt().bits() * 10 + data.du().bits();
+            let date = time::Date::try_from_ymd(year, month, day).expect("Invalid data in RTC timestamp date register");
+            let data = self.reg.tr.read();
+            let mut hour = data.ht().bits() * 10 + data.hu().bits();
+            if data.pm().bit_is_set() {
+                hour += 12;
+            }
+            let minute = data.mt().bits() * 10 + data.mu().bits();
+            let second = data.st().bits() * 10 + data.su().bits();
+            let micro = self.subsec_micros();
+            let time = time::Time::try_from_hms_micro(hour, minute, second, micro).expect("Invalid data in RTC timestamp time register");
+
+            self.reg.isr.modify(|_, w| w.tsf().clear_bit().itsf().clear_bit());
+
+            Some(time::PrimitiveDateTime::new(date, time))
+        } else {
+            None
+        }
+    }
+
+    // TODO: Alarms
+
+    /// Start listening for `event`
     pub fn listen(&mut self, event: Event) {
         match event {
             Event::LseCss => unsafe {
@@ -359,6 +442,7 @@ impl Rtc {
         }
     }
 
+    /// Stop listening for `event`
     pub fn unlisten(&mut self, event: Event) {
         match event {
             Event::LseCss => unsafe {
@@ -371,6 +455,7 @@ impl Rtc {
         }
     }
 
+    /// Returns `true` if `event` is pending
     pub fn is_pending(&self, event: Event) -> bool {
         match event {
             Event::LseCss => unsafe {
@@ -383,6 +468,7 @@ impl Rtc {
         }
     }
 
+    /// Clears the interrupt flag for `event`
     pub fn unpend(&mut self, event: Event) {
         match event {
             Event::LseCss => unsafe {
@@ -396,110 +482,3 @@ impl Rtc {
     }
 }
 
-#[repr(u8)]
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-pub enum DayOfWeek {
-    Monday = 1,
-    Tuesday = 2,
-    Wednesday = 3,
-    Thursday = 4,
-    Friday = 5,
-    Saturday = 6,
-    Sunday = 7,
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub struct Date {
-    data: u32,
-}
-
-impl Date {
-    pub fn year(&self) -> u16 {
-        let tens = (self.data >> 20 & 0b1111) as u16;
-        let ones = (self.data >> 16 & 0b1111) as u16;
-        2000 + tens * 10 + ones
-    }
-
-    pub fn month(&self) -> u8 {
-        let tens = (self.data >> 12 & 0b1 == 1) as u8;
-        let ones = (self.data >> 8 & 0b1111) as u8;
-        tens * 10 + ones
-    }
-
-    pub fn day_of_week(&self) -> DayOfWeek {
-        let ones = self.data >> 13 & 0b111;
-        match ones {
-            1 => DayOfWeek::Monday,
-            2 => DayOfWeek::Tuesday,
-            3 => DayOfWeek::Wednesday,
-            4 => DayOfWeek::Thursday,
-            5 => DayOfWeek::Friday,
-            6 => DayOfWeek::Saturday,
-            7 => DayOfWeek::Sunday,
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn day_of_month(&self) -> u8 {
-        let tens = (self.data >> 4 & 0b11) as u8;
-        let ones = (self.data & 0b1111) as u8;
-        tens * 10 + ones
-    }
-}
-
-pub struct Time {
-    data: u32,
-}
-
-impl Time {
-    /// Returns `true` if the `Time` is PM or `false` if it is AM or 24-hour time.
-    pub fn is_pm(&self) -> bool {
-        self.data & (1 << 22) != 0
-    }
-
-    pub fn hours(&self) -> u8 {
-        let tens = (self.data >> 20 & 0b11) as u8;
-        let ones = (self.data >> 16 & 0b1111) as u8;
-        tens * 10 + ones
-    }
-
-    pub fn minutes(&self) -> u8 {
-        let tens = (self.data >> 12 & 0b111) as u8;
-        let ones = (self.data >> 8 & 0b1111) as u8;
-        tens * 10 + ones
-    }
-
-    pub fn seconds(&self) -> u8 {
-        let tens = (self.data >> 4 & 0b111) as u8;
-        let ones = (self.data & 0b1111) as u8;
-        tens * 10 + ones
-    }
-}
-
-#[cfg(feature = "time-rs")]
-impl Into<time::Time> for Time {
-    fn into(self) -> time::Time {
-        time::Time::try_from_hms(self.hours(), self.minutes(), self.seconds()).unwrap()
-    }
-}
-
-#[cfg(feature = "time-rs")]
-impl From<time::Time> for Time {
-    fn from(self) -> Time {
-        todo!()
-    }
-}
-
-#[cfg(feature = "time-rs")]
-impl Into<time::Date> for Date {
-    fn into(self) -> time::Date {
-        time::Date::try_from_ymd(self.year() as i32, self.month(), self.day_of_month()).unwrap()
-    }
-}
-
-#[cfg(feature = "time-rs")]
-impl From<time::Date> for Date {
-    fn from(self) -> Date {
-        todo!()
-    }
-}
