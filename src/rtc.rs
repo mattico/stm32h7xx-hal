@@ -218,16 +218,6 @@ pub enum Event {
     Tamper3,
 }
 
-pub trait RtcExt {
-    fn constrain(self) -> Rtc;
-}
-
-impl RtcExt for RTC {
-    fn constrain(self) -> Rtc {
-        Rtc { reg: self }
-    }
-}
-
 pub struct Config {}
 
 pub struct Rtc {
@@ -250,7 +240,7 @@ impl Rtc {
         let ker_ck = match prec.get_kernel_clk_mux() {
             rec::RtcClkSel::NOCLOCK => None,
             rec::RtcClkSel::LSI => clocks.lsi_ck(),
-            rec::RtcClkSel::LSE => clocks.lse_ck(),
+            //rec::RtcClkSel::LSE => clocks.lse_ck(),
             rec::RtcClkSel::HSE => clocks.hse_ck().map(|x| Hertz(x.0 / 32)),
         }
         .expect("rtc_ker_ck not running!");

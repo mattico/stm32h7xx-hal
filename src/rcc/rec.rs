@@ -463,7 +463,6 @@ impl ResetEnable for Rtc {
                 &(*RCC::ptr()).bdcr
             };
             rstr.modify(|_, w| w.bdrst().set_bit());
-            rstr.modify(|_, w| w.bdrst().clear_bit());
         });
         self
     }

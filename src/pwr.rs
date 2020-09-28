@@ -106,18 +106,13 @@ pub enum VoltageScale {
 /// longer be changed.
 pub struct PowerConfiguration {
     pub(crate) vos: VoltageScale,
-    pub(crate) backup: bool,
+    pub backup: Option<crate::rcc::Backup>,
 }
 
 impl PowerConfiguration {
     /// Gets the `VoltageScale` which was configured by `Pwr::freeze()`.
     pub fn vos(&self) -> VoltageScale {
         self.vos
-    }
-
-    /// Returns `true` if the backup power domain was enabled by `Pwr::freeze()`.
-    pub fn backup(&self) -> bool {
-        self.backup
     }
 }
 
@@ -301,15 +296,18 @@ impl Pwr {
             vos = VoltageScale::Scale0;
         }
 
-        if self.enable_backup {
+        let backup = if self.enable_backup {
             self.rb.cr1.modify(|_, w| w.dbp().set_bit());
             self.rb.cr2.modify(|_, w| w.bren().set_bit());
             while self.rb.cr2.read().brrdy().bit_is_clear() {}
-        }
+            Some(crate::rcc::Backup { rb: self.rb })
+        } else {
+            None
+        };
 
         PowerConfiguration {
             vos,
-            backup: self.enable_backup,
+            backup,
         }
     }
 }
