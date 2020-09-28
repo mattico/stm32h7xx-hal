@@ -291,7 +291,7 @@ impl Pwr {
 
         // Disable backup power domain write protection
         self.rb.cr1.modify(|_, w| w.dbp().set_bit());
-        let backup = crate::backup::Backup { };
+        let backup = unsafe { crate::backup::Backup::new_singleton() };
 
         PowerConfiguration {
             vos,
