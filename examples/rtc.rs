@@ -1,4 +1,4 @@
-//! Example of configuring the real-time clock using an external 32768Hz Crystal Oscillator
+//! Example of configuring the real-time clock using the internal LSI oscillator
 
 #![no_main]
 #![no_std]
