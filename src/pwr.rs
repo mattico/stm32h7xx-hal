@@ -104,13 +104,17 @@ pub enum VoltageScale {
 /// longer be changed.
 pub struct PowerConfiguration {
     pub(crate) vos: VoltageScale,
-    pub backup: crate::backup::Backup,
+    pub(crate) backup: Option<crate::backup::Backup>,
 }
 
 impl PowerConfiguration {
     /// Gets the `VoltageScale` which was configured by `Pwr::freeze()`.
     pub fn vos(&self) -> VoltageScale {
         self.vos
+    }
+
+    pub fn backup(&mut self) -> Option<crate::backup::Backup> {
+        self.backup.take()
     }
 }
 
@@ -295,7 +299,7 @@ impl Pwr {
 
         PowerConfiguration {
             vos,
-            backup,
+            backup: Some(backup),
         }
     }
 }

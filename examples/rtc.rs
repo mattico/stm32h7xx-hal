@@ -24,10 +24,10 @@ fn main() -> ! {
     // Constrain and Freeze power
     info!("Setup PWR...                  ");
     let pwr = dp.PWR.constrain();
-    let pwrcfg = pwr.freeze();
+    let mut pwrcfg = pwr.freeze();
 
     // Take the backup power domain
-    let backup = pwrcfg.backup;
+    let backup = pwrcfg.backup().unwrap();
 
     // Constrain and Freeze clock
     info!("Setup RCC...                  ");
