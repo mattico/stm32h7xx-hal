@@ -19,6 +19,16 @@ pub enum Event {
 }
 
 #[derive(Copy, Clone, PartialEq)]
+pub enum DstState {
+    /// Standard Time
+    Standard = 0,
+    /// Daylight Savings Time
+    ///
+    /// One hour ahead of Standard Time
+    Dst = 1,
+}
+
+#[derive(Copy, Clone, PartialEq)]
 pub enum RtcClock {
     /// LSE (Low-Speed External)
     Lse {
@@ -33,12 +43,21 @@ pub enum RtcClock {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub enum Error {
+/// An error preventing the RTC from initializing
+pub enum InitError {
     RtcNotRunning,
     ClockNotRunning,
     ConfigMismatch,
     ClockTooFast,
     CalendarNotInitialized,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum DstError {
+    ClockNotInitialized,
+    AlreadyDst,
+    AlreadyStandardTime,
+    CannotSubtract,
 }
 
 pub struct Rtc {
@@ -67,9 +86,9 @@ impl Rtc {
         prec: backup::Rtc,
         clock_source: RtcClock,
         clocks: &CoreClocks,
-    ) -> Result<Self, (RTC, backup::Rtc, Error)> {
+    ) -> Result<Self, (RTC, backup::Rtc, InitError)> {
         if !prec.is_enabled() {
-            return Err((rtc, prec, Error::RtcNotRunning));
+            return Err((rtc, prec, InitError::RtcNotRunning));
         }
 
         let bdcr = unsafe { (&*RCC::ptr()).bdcr.read() };
@@ -85,7 +104,7 @@ impl Rtc {
                 _ => false,
             };
         if !clock_source_matches {
-            return Err((rtc, prec, Error::ConfigMismatch));
+            return Err((rtc, prec, InitError::ConfigMismatch));
         }
 
         let clock_source_running = match clock_source {
@@ -94,11 +113,11 @@ impl Rtc {
             RtcClock::Lse { .. } => bdcr.lserdy().is_ready(),
         };
         if !clock_source_running {
-            return Err((rtc, prec, Error::ClockNotRunning));
+            return Err((rtc, prec, InitError::ClockNotRunning));
         }
 
         if rtc.isr.read().inits().bit_is_clear() {
-            return Err((rtc, prec, Error::CalendarNotInitialized));
+            return Err((rtc, prec, InitError::CalendarNotInitialized));
         }
 
         Ok(Rtc { reg: rtc })
@@ -190,6 +209,9 @@ impl Rtc {
         Rtc { reg: rtc }
     }
 
+    /// Reads the value of a 32-bit backup register
+    ///
+    /// **Panics:** if reg is greater than 31
     pub fn read_backup_reg(&self, reg: u8) -> u32 {
         match reg {
             0 => self.reg.bkp0r.read().bkp().bits(),
@@ -231,6 +253,9 @@ impl Rtc {
         //self.reg.bkp[reg].read().bits()
     }
 
+    /// Writes `value` to a 32-bit backup register
+    ///
+    /// **Panics:** if reg is greater than 31
     pub fn write_backup_reg(&mut self, reg: u8, value: u32) {
         match reg {
             0 => self.reg.bkp0r.write(|w| unsafe { w.bkp().bits(value) }),
@@ -273,7 +298,7 @@ impl Rtc {
     }
 
     /// Sets the date and time of the RTC
-    pub fn set_date_time(&mut self, date_time: DateTime<Utc>) {
+    pub fn set_date_time(&mut self, date_time: NaiveDateTime) {
         // Enter initialization mode
         self.reg.isr.modify(|_, w| w.init().set_bit());
         while self.reg.isr.read().initf().bit_is_clear() {}
@@ -357,9 +382,8 @@ impl Rtc {
 
     /// Calendar Date
     ///
-    /// Returns `None` if the calendar has not been initialized or the
-    /// date data is invalid.
-    pub fn date(&self) -> Option<Date<Utc>> {
+    /// Returns `None` if the calendar has not been initialized
+    pub fn date(&self) -> Option<NaiveDate> {
         self.calendar_initialized()?;
         self.wait_for_sync();
         let data = self.reg.dr.read();
@@ -367,13 +391,12 @@ impl Rtc {
             2000 + data.yt().bits() as i32 * 10 + data.yu().bits() as i32;
         let month = data.mt().bits() as u8 * 10 + data.mu().bits();
         let day = data.dt().bits() * 10 + data.du().bits();
-        Utc.ymd_opt(year, u32(month), u32(day)).single()
+        NaiveDate::from_ymd_opt(year, u32(month), u32(day))
     }
 
-    /// Calendar Time
+    /// Time
     ///
-    /// Returns `None` if the calendar has not been initialized or the
-    /// time data is invalid.
+    /// Returns `None` if the calendar has not been initialized
     pub fn time(&self) -> Option<NaiveTime> {
         self.calendar_initialized()?;
         self.wait_for_sync();
@@ -395,12 +418,11 @@ impl Rtc {
 
     /// Calendar Date and Time
     ///
-    /// Returns `None` if the calendar has not been initialized or the
-    /// date/time data is invalid.
-    pub fn date_time(&self) -> Option<DateTime<Utc>> {
+    /// Returns `None` if the calendar has not been initialized
+    pub fn date_time(&self) -> Option<NaiveDateTime> {
         let date = self.date()?;
         let time = self.time()?;
-        date.and_time(time)
+        Some(date.and_time(time))
     }
 
     /// Returns the fraction of seconds that have occurred since the last second tick
@@ -408,35 +430,92 @@ impl Rtc {
     /// The precision of this value depends on the value of the synchronous prescale divider
     /// (prediv_s) which depends on the frequency of the RTC clock. E.g. with a 32,768 Hz
     /// crystal this value has a resolution of 1/256 of a second.
-    pub fn subseconds(&self) -> f32 {
+    pub fn subseconds(&self) -> Option<f32> {
+        self.calendar_initialized()?;
         self.wait_for_sync();
         let ss = self.reg.ssr.read().bits() as f32;
         let prediv_s = self.reg.prer.read().prediv_s().bits() as f32;
-        (prediv_s - ss) / (prediv_s + 1.0)
+        Some((prediv_s - ss) / (prediv_s + 1.0))
     }
 
     /// Returns the fraction of seconds that have occurred since the last second tick
     /// as a number of milliseconds rounded to the nearest whole number.
-    pub fn subsec_micros(&self) -> u32 {
+    pub fn subsec_micros(&self) -> Option<u32> {
+        self.calendar_initialized()?;
         self.wait_for_sync();
         let ss = self.reg.ssr.read().ss().bits() as u32;
         let prediv_s = self.reg.prer.read().prediv_s().bits() as u32;
-        ((prediv_s - ss) * 1_000) / (prediv_s + 1)
+        Some(((prediv_s - ss) * 1_000) / (prediv_s + 1))
     }
 
     /// Returns the raw value of the synchronous subsecond counter
     ///
     /// This counts up to `self.subsec_res()` then resets to zero once per second.
-    pub fn subsec_raw(&self) -> u16 {
+    pub fn subsec_raw(&self) -> Option<u16> {
+        self.calendar_initialized()?;
         self.wait_for_sync();
-        self.reg.ssr.read().ss().bits()
+        Some(self.reg.ssr.read().ss().bits())
     }
 
     /// Returns the resolution of subsecond values
     ///
     /// The RTC counter increments this number of times per second.
-    pub fn subsec_res(&self) -> u16 {
-        self.reg.prer.read().prediv_s().bits()
+    pub fn subsec_res(&self) -> Option<u16> {
+        self.calendar_initialized()?;
+        Some(self.reg.prer.read().prediv_s().bits())
+    }
+
+    /// Returns the stored Daylight Savings Time status
+    pub fn dst(&self) -> DstState {
+        if self.reg.cr.read().bkp().bit_is_set() {
+            DstState::Dst
+        } else {
+            DstState::Standard
+        }
+    }
+
+    /// Sets the stored Daylight Savings Time status without adjusting the clock
+    pub fn set_dst(&mut self, dst: DstState) {
+        self.reg.cr.modify(|_, w| w.bkp().bit(dst == DstState::Dst));
+    }
+
+    /// Begin Daylight Savings Time
+    ///
+    /// Adds an hour to the stored time and sets the stored DST status.
+    /// Returns an error if the clock has not been initialized, or if the stored DST status
+    /// indicates it has already begun.
+    pub fn begin_dst(&mut self) -> Result<(), DstError> {
+        self.calendar_initialized()
+            .ok_or(DstError::ClockNotInitialized)?;
+        if self.reg.cr.read().bkp().bit_is_set() {
+            return Err(DstError::AlreadyDst);
+        }
+        self.reg
+            .cr
+            .modify(|_, w| w.add1h().set_bit().bkp().set_bit());
+        Ok(())
+    }
+
+    /// End Daylight Savings Time
+    ///
+    /// Subtracts an hour from the stored time and sets the stored DST status.
+    /// Returns an error if the clock has not been initialized, if the stored DST status
+    /// indicates it is already standard time, or if we cannot subtract an hour because
+    /// it is not at least one hour past midnight.
+    pub fn end_dst(&mut self) -> Result<(), DstError> {
+        self.calendar_initialized()
+            .ok_or(DstError::ClockNotInitialized)?;
+        if self.reg.cr.read().bkp().bit_is_clear() {
+            return Err(DstError::AlreadyStandardTime);
+        }
+        let time = self.reg.tr.read();
+        if time.ht().bits() == 0 && time.hu().bits() == 0 {
+            return Err(DstError::CannotSubtract);
+        }
+        self.reg
+            .cr
+            .modify(|_, w| w.sub1h().set_bit().bkp().clear_bit());
+        Ok(())
     }
 
     /// Configures the wakeup timer to trigger periodically after `interval` seconds
@@ -487,10 +566,10 @@ impl Rtc {
         self.reg.isr.modify(|_, w| w.tsf().clear_bit());
     }
 
-    /// Reads the stored value of the timestamp if present, valid, and unambiguous
+    /// Reads the stored value of the timestamp if present
     ///
     /// Clears the timestamp interrupt flags.
-    pub fn read_timestamp(&self) -> Option<DateTime<Utc>> {
+    pub fn read_timestamp(&self) -> Option<NaiveDateTime> {
         if self.reg.isr.read().tsf().bit_is_clear() {
             return None;
         }
@@ -500,7 +579,7 @@ impl Rtc {
             2000 + data.yt().bits() as i32 * 10 + data.yu().bits() as i32;
         let month = data.mt().bits() as u32 * 10 + data.mu().bits() as u32;
         let day = data.dt().bits() as u32 * 10 + data.du().bits() as u32;
-        let date = Utc.ymd_opt(year, month, day);
+        let date = NaiveDate::from_ymd_opt(year, month, day)?;
 
         let data = self.reg.tr.read();
         let mut hour = data.ht().bits() as u32 * 10 + data.hu().bits() as u32;
@@ -518,7 +597,7 @@ impl Rtc {
             .isr
             .modify(|_, w| w.tsf().clear_bit().itsf().clear_bit());
 
-        date.and_time(time).single()
+        Some(date.and_time(time))
     }
 
     // TODO: Alarms
