@@ -5,12 +5,12 @@
 
 use log::info;
 
-use cortex_m_rt::entry;
 use cortex_m::asm;
-use time::{time, date, PrimitiveDateTime};
+use cortex_m_rt::entry;
+use time::{date, time, PrimitiveDateTime};
 
-use stm32h7xx_hal::{pac, prelude::*, rtc};
 use pac::interrupt;
+use stm32h7xx_hal::{pac, prelude::*, rtc};
 
 #[path = "utilities/logger.rs"]
 mod logger;
@@ -39,8 +39,17 @@ fn main() -> ! {
     info!("stm32h7xx-hal example - RTC");
     info!("");
 
-    let mut rtc = rtc::Rtc::open_or_init(dp.RTC, backup.RTC, rtc::RtcClock::Lsi, rtc::TimeFormat::F24, &ccdr.clocks);
-    rtc.set_date_time(PrimitiveDateTime::new(date!(2020-01-01), time!(00:00)));
+    let mut rtc = rtc::Rtc::open_or_init(
+        dp.RTC,
+        backup.RTC,
+        rtc::RtcClock::Lsi,
+        rtc::TimeFormat::F24,
+        &ccdr.clocks,
+    );
+    rtc.set_date_time(PrimitiveDateTime::new(
+        date!(2020 - 01 - 01),
+        time!(00:00),
+    ));
     rtc.listen(rtc::Event::Wakeup);
     rtc.enable_wakeup(10);
 
@@ -52,6 +61,4 @@ fn main() -> ! {
 }
 
 #[interrupt]
-fn RTC_WKUP() {
-}
-
+fn RTC_WKUP() {}

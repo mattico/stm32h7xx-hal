@@ -67,29 +67,45 @@ pub struct Rtc {
 
 impl Rtc {
     /// Opens the RTC if it is running and its configuration matches, otherwise resets and inits the RTC
-    pub fn open_or_init(rtc: RTC, prec: backup::Rtc, clock_source: RtcClock, format: TimeFormat, clocks: &CoreClocks) -> Self {
+    pub fn open_or_init(
+        rtc: RTC,
+        prec: backup::Rtc,
+        clock_source: RtcClock,
+        format: TimeFormat,
+        clocks: &CoreClocks,
+    ) -> Self {
         match Rtc::try_open(rtc, prec, clock_source, format, clocks) {
             Ok(rtc) => rtc,
-            Err((rtc, prec, _err)) => Rtc::init(rtc, prec, clock_source, format, clocks),
+            Err((rtc, prec, _err)) => {
+                Rtc::init(rtc, prec, clock_source, format, clocks)
+            }
         }
     }
 
     /// Opens the RTC if it is running and its configuration matches
-    pub fn try_open(rtc: RTC, prec: backup::Rtc, clock_source: RtcClock, format: TimeFormat, clocks: &CoreClocks) -> Result<Self, (RTC, backup::Rtc, Error)> {
+    pub fn try_open(
+        rtc: RTC,
+        prec: backup::Rtc,
+        clock_source: RtcClock,
+        format: TimeFormat,
+        clocks: &CoreClocks,
+    ) -> Result<Self, (RTC, backup::Rtc, Error)> {
         if !prec.is_enabled() {
             return Err((rtc, prec, Error::RtcNotRunning));
         }
 
         let bdcr = unsafe { (&*RCC::ptr()).bdcr.read() };
 
-        let clock_source_matches = match (clock_source, prec.get_kernel_clk_mux()) {
-            (RtcClock::Lsi, backup::RtcClkSel::LSI) => true,
-            (RtcClock::HseDiv32, backup::RtcClkSel::HSE) => true,
-            (RtcClock::Lse { bypass, css, .. }, backup::RtcClkSel::LSE) => {
-                bypass == bdcr.lsebyp().is_bypassed() && css == bdcr.lsecsson().is_security_on()
-            }
-            _ => false,
-        };
+        let clock_source_matches =
+            match (clock_source, prec.get_kernel_clk_mux()) {
+                (RtcClock::Lsi, backup::RtcClkSel::LSI) => true,
+                (RtcClock::HseDiv32, backup::RtcClkSel::HSE) => true,
+                (RtcClock::Lse { bypass, css, .. }, backup::RtcClkSel::LSE) => {
+                    bypass == bdcr.lsebyp().is_bypassed()
+                        && css == bdcr.lsecsson().is_security_on()
+                }
+                _ => false,
+            };
         if !clock_source_matches {
             return Err((rtc, prec, Error::ConfigMismatch));
         }
@@ -118,7 +134,13 @@ impl Rtc {
     }
 
     /// Resets the RTC, including the backup registers, then initializes it.
-    pub fn init(rtc: RTC, prec: backup::Rtc, clock_source: RtcClock, format: TimeFormat, clocks: &CoreClocks) -> Self {
+    pub fn init(
+        rtc: RTC,
+        prec: backup::Rtc,
+        clock_source: RtcClock,
+        format: TimeFormat,
+        clocks: &CoreClocks,
+    ) -> Self {
         let prec = prec.reset().enable();
 
         let bdcr = unsafe { &(*RCC::ptr()).bdcr };
@@ -378,11 +400,12 @@ impl Rtc {
         self.calendar_initialized()?;
         self.wait_for_sync();
         let data = self.reg.dr.read();
-        let year = 2000 + data.yt().bits() as i32 * 10 + data.yu().bits() as i32;
+        let year =
+            2000 + data.yt().bits() as i32 * 10 + data.yu().bits() as i32;
         let month = data.mt().bits() as u8 * 10 + data.mu().bits();
         let day = data.dt().bits() as u8 * 10 + data.du().bits();
-        let date =
-            time::Date::try_from_ymd(year, month, day).expect("Invalid data in RTC date register");
+        let date = time::Date::try_from_ymd(year, month, day)
+            .expect("Invalid data in RTC date register");
         Some(date)
     }
 
@@ -505,7 +528,8 @@ impl Rtc {
     pub fn read_timestamp(&self) -> Option<time::PrimitiveDateTime> {
         if self.reg.isr.read().tsf().bit_is_set() {
             let data = self.reg.dr.read();
-            let year = 2000 + data.yt().bits() as i32 * 10 + data.yu().bits() as i32;
+            let year =
+                2000 + data.yt().bits() as i32 * 10 + data.yu().bits() as i32;
             let month = data.mt().bits() as u8 * 10 + data.mu().bits();
             let day = data.dt().bits() * 10 + data.du().bits();
             let date = time::Date::try_from_ymd(year, month, day)
@@ -518,8 +542,9 @@ impl Rtc {
             let minute = data.mnt().bits() * 10 + data.mnu().bits();
             let second = data.st().bits() * 10 + data.su().bits();
             let micro = self.subsec_micros();
-            let time = time::Time::try_from_hms_micro(hour, minute, second, micro)
-                .expect("Invalid data in RTC timestamp time register");
+            let time =
+                time::Time::try_from_hms_micro(hour, minute, second, micro)
+                    .expect("Invalid data in RTC timestamp time register");
 
             self.reg
                 .isr
@@ -562,7 +587,9 @@ impl Rtc {
     /// Returns `true` if `event` is pending
     pub fn is_pending(&self, event: Event) -> bool {
         match event {
-            Event::LseCss => unsafe { (&*RCC::ptr()).cifr.read().lsecssf().bit_is_set() },
+            Event::LseCss => unsafe {
+                (&*RCC::ptr()).cifr.read().lsecssf().bit_is_set()
+            },
             Event::AlarmA => self.reg.isr.read().alraf().bit_is_set(),
             Event::AlarmB => self.reg.isr.read().alrbf().bit_is_set(),
             Event::Wakeup => self.reg.isr.read().wutf().bit_is_set(),
@@ -573,7 +600,9 @@ impl Rtc {
     /// Clears the interrupt flag for `event`
     pub fn unpend(&mut self, event: Event) {
         match event {
-            Event::LseCss => unsafe { (&*RCC::ptr()).cicr.write(|w| w.lsecssc().clear()) },
+            Event::LseCss => unsafe {
+                (&*RCC::ptr()).cicr.write(|w| w.lsecssc().clear())
+            },
             Event::AlarmA => self.reg.isr.modify(|_, w| w.alraf().clear_bit()),
             Event::AlarmB => self.reg.isr.modify(|_, w| w.alrbf().clear_bit()),
             Event::Wakeup => self.reg.isr.modify(|_, w| w.wutf().clear_bit()),

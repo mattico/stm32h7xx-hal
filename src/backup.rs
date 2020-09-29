@@ -8,7 +8,9 @@ impl Backup {
     pub(crate) unsafe fn new_singleton() -> Self {
         Self {
             #[cfg(feature = "rtc")]
-            RTC: Rtc { _marker: core::marker::PhantomData }
+            RTC: Rtc {
+                _marker: core::marker::PhantomData,
+            },
         }
     }
 }
@@ -18,10 +20,10 @@ pub use rtc::{Rtc, RtcClkSel};
 
 #[cfg(feature = "rtc")]
 mod rtc {
-    use core::marker::PhantomData;
-    use cortex_m::interrupt;
     use crate::rcc::rec::ResetEnable;
     use crate::stm32::RCC;
+    use core::marker::PhantomData;
+    use cortex_m::interrupt;
 
     /// Owned ability to Reset, Enable and Disable peripheral
     pub struct Rtc {
@@ -35,9 +37,7 @@ mod rtc {
         fn enable(self) -> Self {
             // unsafe: Owned exclusive access to this bitfield
             interrupt::free(|_| {
-                let enr = unsafe {
-                    &(*RCC::ptr()).bdcr
-                };
+                let enr = unsafe { &(*RCC::ptr()).bdcr };
                 enr.modify(|_, w| w.rtcen().set_bit());
             });
             self
@@ -46,9 +46,7 @@ mod rtc {
         fn disable(self) -> Self {
             // unsafe: Owned exclusive access to this bitfield
             interrupt::free(|_| {
-                let enr = unsafe {
-                    &(*RCC::ptr()).bdcr
-                };
+                let enr = unsafe { &(*RCC::ptr()).bdcr };
                 enr.modify(|_, w| w.rtcen().clear_bit());
             });
             self
@@ -57,9 +55,7 @@ mod rtc {
         fn reset(self) -> Self {
             // unsafe: Owned exclusive access to this bitfield
             interrupt::free(|_| {
-                let rstr = unsafe {
-                    &(*RCC::ptr()).bdcr
-                };
+                let rstr = unsafe { &(*RCC::ptr()).bdcr };
                 rstr.modify(|_, w| w.bdrst().set_bit());
                 rstr.modify(|_, w| w.bdrst().clear_bit());
             });
@@ -75,9 +71,7 @@ mod rtc {
         pub fn is_enabled(&self) -> bool {
             // unsafe: Owned exclusive access to this bitfield
             interrupt::free(|_| {
-                let enr = unsafe {
-                    &(*RCC::ptr()).bdcr
-                };
+                let enr = unsafe { &(*RCC::ptr()).bdcr };
                 enr.read().rtcen().bit_is_set()
             })
         }
@@ -91,9 +85,7 @@ mod rtc {
         pub fn kernel_clk_mux(self, sel: RtcClkSel) -> Self {
             // unsafe: Owned exclusive access to this bitfield
             interrupt::free(|_| {
-                let ccip = unsafe {
-                    &(*RCC::ptr()).bdcr
-                };
+                let ccip = unsafe { &(*RCC::ptr()).bdcr };
                 ccip.modify(|_, w| w.rtcsel().variant(sel));
             });
             self
@@ -102,11 +94,8 @@ mod rtc {
         /// Return the current kernel clock selection
         pub fn get_kernel_clk_mux(&self) -> RtcClkSel {
             // unsafe: We only read from this bitfield
-            let ccip = unsafe {
-                &(*RCC::ptr()).bdcr
-            };
+            let ccip = unsafe { &(*RCC::ptr()).bdcr };
             ccip.read().rtcsel().variant()
         }
     }
-
 }
