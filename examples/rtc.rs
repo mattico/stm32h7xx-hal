@@ -39,11 +39,7 @@ fn main() -> ! {
     info!("stm32h7xx-hal example - RTC");
     info!("");
 
-    let mut rtc = rtc::RtcBuilder::new(dp.RTC, backup.RTC, rtc::RtcClock::Lsi, rtc::TimeFormat::F24)
-        .open(&ccdr.clocks)
-        .or_else(|(rtc, _err)| rtc.init(&ccdr.clocks))
-        .expect("Unable to initialize RTC");
-
+    let mut rtc = rtc::Rtc::open_or_init(dp.RTC, backup.RTC, rtc::RtcClock::Lsi, rtc::TimeFormat::F24, &ccdr.clocks);
     rtc.set_date_time(PrimitiveDateTime::new(date!(2020-01-01), time!(00:00)));
     rtc.listen(rtc::Event::Wakeup);
     rtc.enable_wakeup(10);

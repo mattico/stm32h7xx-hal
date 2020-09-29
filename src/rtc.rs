@@ -60,25 +60,29 @@ pub enum Error {
     CalendarNotInitialized,
 }
 
-impl RtcBuilder {
-    pub fn new(rtc: RTC, prec: backup::Rtc, clock_source: RtcClock, format: TimeFormat) -> Self {
-        Self {
-            rtc,
-            prec,
-            clock_source,
-            format,
+pub struct Rtc {
+    reg: RTC,
+    format: TimeFormat,
+}
+
+impl Rtc {
+    /// Opens the RTC if it is running and its configuration matches, otherwise resets and inits the RTC
+    pub fn open_or_init(rtc: RTC, prec: backup::Rtc, clock_source: RtcClock, format: TimeFormat, clocks: &CoreClocks) -> Self {
+        match Rtc::try_open(rtc, prec, clock_source, format, clocks) {
+            Ok(rtc) => rtc,
+            Err((rtc, prec, _err)) => Rtc::init(rtc, prec, clock_source, format, clocks),
         }
     }
 
-    /// Opens the RTC if it is running and its configuration matches the `RtcBuilder`.
-    pub fn open(self, clocks: &CoreClocks) -> Result<Rtc, (Self, Error)> {
-        if !self.prec.is_enabled() {
-            return Err((self, Error::RtcNotRunning));
+    /// Opens the RTC if it is running and its configuration matches
+    pub fn try_open(rtc: RTC, prec: backup::Rtc, clock_source: RtcClock, format: TimeFormat, clocks: &CoreClocks) -> Result<Self, (RTC, backup::Rtc, Error)> {
+        if !prec.is_enabled() {
+            return Err((rtc, prec, Error::RtcNotRunning));
         }
 
         let bdcr = unsafe { (&*RCC::ptr()).bdcr.read() };
 
-        let clock_source_matches = match (self.clock_source, self.prec.get_kernel_clk_mux()) {
+        let clock_source_matches = match (clock_source, prec.get_kernel_clk_mux()) {
             (RtcClock::Lsi, backup::RtcClkSel::LSI) => true,
             (RtcClock::HseDiv32, backup::RtcClkSel::HSE) => true,
             (RtcClock::Lse { bypass, css, .. }, backup::RtcClkSel::LSE) => {
@@ -87,41 +91,34 @@ impl RtcBuilder {
             _ => false,
         };
         if !clock_source_matches {
-            return Err((self, Error::ConfigMismatch));
+            return Err((rtc, prec, Error::ConfigMismatch));
         }
 
-        let clock_source_running = match self.clock_source {
+        let clock_source_running = match clock_source {
             RtcClock::Lsi => clocks.lsi_ck().is_some(),
             RtcClock::HseDiv32 => clocks.hse_ck().is_some(),
             RtcClock::Lse { .. } => bdcr.lserdy().is_ready(),
         };
         if !clock_source_running {
-            return Err((self, Error::ClockNotRunning));
+            return Err((rtc, prec, Error::ClockNotRunning));
         }
 
-        if self.rtc.isr.read().inits().bit_is_clear() {
-            return Err((self, Error::CalendarNotInitialized));
+        if rtc.isr.read().inits().bit_is_clear() {
+            return Err((rtc, prec, Error::CalendarNotInitialized));
         }
 
-        if self.rtc.cr.read().fmt().bit() as u8 != self.format as u8 {
-            return Err((self, Error::ConfigMismatch));
+        if rtc.cr.read().fmt().bit() as u8 != format as u8 {
+            return Err((rtc, prec, Error::ConfigMismatch));
         }
 
         Ok(Rtc {
-            reg: self.rtc,
-            format: self.format,
+            reg: rtc,
+            format: format,
         })
     }
 
     /// Resets the RTC, including the backup registers, then initializes it.
-    pub fn init(self, clocks: &CoreClocks) -> Result<Rtc, Error> {
-        let RtcBuilder {
-            rtc,
-            prec,
-            clock_source,
-            format,
-        } = self;
-
+    pub fn init(rtc: RTC, prec: backup::Rtc, clock_source: RtcClock, format: TimeFormat, clocks: &CoreClocks) -> Self {
         let prec = prec.reset().enable();
 
         let bdcr = unsafe { &(*RCC::ptr()).bdcr };
@@ -150,10 +147,10 @@ impl RtcBuilder {
             RtcClock::Lsi => clocks.lsi_ck(),
             RtcClock::HseDiv32 => clocks.hse_ck().map(|x| Hertz(x.0 / 32)),
         }
-        .ok_or(Error::ClockNotRunning)?
+        .expect("rtc_ker_ck not running")
         .0;
         if ker_ck > (1 << 22) {
-            return Err(Error::ClockTooFast);
+            panic!("rtc_ker_ck too fast for prescaler");
         }
 
         // Disable RTC register write protection
@@ -202,16 +199,9 @@ impl RtcBuilder {
         // Exit initialization mode
         rtc.isr.modify(|_, w| w.init().clear_bit());
 
-        Ok(Rtc { reg: rtc, format })
+        Rtc { reg: rtc, format }
     }
-}
 
-pub struct Rtc {
-    reg: RTC,
-    format: TimeFormat,
-}
-
-impl Rtc {
     pub fn read_backup_reg(&self, reg: u8) -> u32 {
         match reg {
             0 => self.reg.bkp0r.read().bkp().bits(),
