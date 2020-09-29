@@ -1,8 +1,8 @@
 //! Real-Time Clock
 
+use cast::u32;
+use chrono::prelude::*;
 use core::convert::TryInto;
-
-use time;
 
 use crate::backup;
 use crate::rcc::rec::ResetEnable;
@@ -32,25 +32,6 @@ pub enum RtcClock {
     HseDiv32,
 }
 
-#[repr(u8)]
-#[derive(Copy, Clone, PartialEq)]
-pub enum TimeFormat {
-    F24 = 0,
-    AmPm = 1,
-}
-
-pub struct Config {
-    pub clock_source: RtcClock,
-    pub format: TimeFormat,
-}
-
-pub struct RtcBuilder {
-    rtc: RTC,
-    prec: backup::Rtc,
-    clock_source: RtcClock,
-    format: TimeFormat,
-}
-
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Error {
     RtcNotRunning,
@@ -62,7 +43,6 @@ pub enum Error {
 
 pub struct Rtc {
     reg: RTC,
-    format: TimeFormat,
 }
 
 impl Rtc {
@@ -71,13 +51,12 @@ impl Rtc {
         rtc: RTC,
         prec: backup::Rtc,
         clock_source: RtcClock,
-        format: TimeFormat,
         clocks: &CoreClocks,
     ) -> Self {
-        match Rtc::try_open(rtc, prec, clock_source, format, clocks) {
+        match Rtc::try_open(rtc, prec, clock_source, clocks) {
             Ok(rtc) => rtc,
             Err((rtc, prec, _err)) => {
-                Rtc::init(rtc, prec, clock_source, format, clocks)
+                Rtc::init(rtc, prec, clock_source, clocks)
             }
         }
     }
@@ -87,7 +66,6 @@ impl Rtc {
         rtc: RTC,
         prec: backup::Rtc,
         clock_source: RtcClock,
-        format: TimeFormat,
         clocks: &CoreClocks,
     ) -> Result<Self, (RTC, backup::Rtc, Error)> {
         if !prec.is_enabled() {
@@ -123,14 +101,7 @@ impl Rtc {
             return Err((rtc, prec, Error::CalendarNotInitialized));
         }
 
-        if rtc.cr.read().fmt().bit() as u8 != format as u8 {
-            return Err((rtc, prec, Error::ConfigMismatch));
-        }
-
-        Ok(Rtc {
-            reg: rtc,
-            format: format,
-        })
+        Ok(Rtc { reg: rtc })
     }
 
     /// Resets the RTC, including the backup registers, then initializes it.
@@ -138,7 +109,6 @@ impl Rtc {
         rtc: RTC,
         prec: backup::Rtc,
         clock_source: RtcClock,
-        format: TimeFormat,
         clocks: &CoreClocks,
     ) -> Self {
         let prec = prec.reset().enable();
@@ -214,14 +184,10 @@ impl Rtc {
                 .bits(a_pre as u8 - 1)
         });
 
-        // Set time format
-        rtc.cr
-            .modify(|_, w| w.fmt().bit(format == TimeFormat::AmPm));
-
         // Exit initialization mode
         rtc.isr.modify(|_, w| w.init().clear_bit());
 
-        Rtc { reg: rtc, format }
+        Rtc { reg: rtc }
     }
 
     pub fn read_backup_reg(&self, reg: u8) -> u32 {
@@ -307,30 +273,26 @@ impl Rtc {
     }
 
     /// Sets the date and time of the RTC
-    pub fn set_date_time(&mut self, date: time::PrimitiveDateTime) {
+    pub fn set_date_time(&mut self, date_time: DateTime<Utc>) {
         // Enter initialization mode
         self.reg.isr.modify(|_, w| w.init().set_bit());
         while self.reg.isr.read().initf().bit_is_clear() {}
 
-        let mut hour = date.hour();
-        let pm = self.format == TimeFormat::AmPm && hour >= 12;
-        if pm {
-            hour -= 12;
-        }
+        let mut hour = date_time.hour() as u8;
         let ht = hour / 10;
         let hu = hour % 10;
 
-        let minute = date.minute();
+        let minute = date_time.minute() as u8;
         let mnt = minute / 10;
         let mnu = minute % 10;
 
-        let second = date.second();
+        let second = date_time.second() as u8;
         let st = second / 10;
         let su = second % 10;
 
         self.reg.tr.write(|w| unsafe {
             w.pm()
-                .bit(pm)
+                .clear_bit()
                 .ht()
                 .bits(ht)
                 .hu()
@@ -345,17 +307,17 @@ impl Rtc {
                 .bits(su)
         });
 
-        let year = date.year();
+        let year = date_time.year();
         let yt = ((year - 2000) / 10) as u8;
         let yu = ((year - 2000) % 10) as u8;
 
-        let wdu = date.weekday().number_from_monday();
+        let wdu = date_time.weekday().number_from_monday() as u8;
 
-        let (month, day) = date.month_day();
-
+        let month = date_time.month() as u8;
         let mt = month > 9;
         let mu = month % 10;
 
+        let day = date_time.day() as u8;
         let dt = day / 10;
         let du = day % 10;
 
@@ -395,24 +357,24 @@ impl Rtc {
 
     /// Calendar Date
     ///
-    /// Returns `None` if the calendar has not been initialized.
-    pub fn date(&self) -> Option<time::Date> {
+    /// Returns `None` if the calendar has not been initialized or the
+    /// date data is invalid.
+    pub fn date(&self) -> Option<Date<Utc>> {
         self.calendar_initialized()?;
         self.wait_for_sync();
         let data = self.reg.dr.read();
         let year =
             2000 + data.yt().bits() as i32 * 10 + data.yu().bits() as i32;
         let month = data.mt().bits() as u8 * 10 + data.mu().bits();
-        let day = data.dt().bits() as u8 * 10 + data.du().bits();
-        let date = time::Date::try_from_ymd(year, month, day)
-            .expect("Invalid data in RTC date register");
-        Some(date)
+        let day = data.dt().bits() * 10 + data.du().bits();
+        Utc.ymd_opt(year, u32(month), u32(day)).single()
     }
 
     /// Calendar Time
     ///
-    /// Returns `None` if the calendar has not been initialized.
-    pub fn time(&self) -> Option<time::Time> {
+    /// Returns `None` if the calendar has not been initialized or the
+    /// time data is invalid.
+    pub fn time(&self) -> Option<NaiveTime> {
         self.calendar_initialized()?;
         self.wait_for_sync();
         let data = self.reg.tr.read();
@@ -423,18 +385,22 @@ impl Rtc {
         let minute = data.mnt().bits() * 10 + data.mnu().bits();
         let second = data.st().bits() * 10 + data.su().bits();
         let micro = self.subsec_micros();
-        let time = time::Time::try_from_hms_micro(hour, minute, second, micro)
-            .expect("Invalid data in RTC time register");
-        Some(time)
+        NaiveTime::from_hms_micro_opt(
+            u32(hour),
+            u32(minute),
+            u32(second),
+            u32(micro),
+        )
     }
 
     /// Calendar Date and Time
     ///
-    /// Returns `None` if the calendar has not been initialized.
-    pub fn date_time(&self) -> Option<time::PrimitiveDateTime> {
+    /// Returns `None` if the calendar has not been initialized or the
+    /// date/time data is invalid.
+    pub fn date_time(&self) -> Option<DateTime<Utc>> {
         let date = self.date()?;
         let time = self.time()?;
-        Some(time::PrimitiveDateTime::new(date, time))
+        date.and_time(time)
     }
 
     /// Returns the fraction of seconds that have occurred since the last second tick
@@ -521,39 +487,38 @@ impl Rtc {
         self.reg.isr.modify(|_, w| w.tsf().clear_bit());
     }
 
-    // TODO: Timestamp overflow flag
-    /// Reads the stored value of the timestamp if present
+    /// Reads the stored value of the timestamp if present, valid, and unambiguous
     ///
     /// Clears the timestamp interrupt flags.
-    pub fn read_timestamp(&self) -> Option<time::PrimitiveDateTime> {
-        if self.reg.isr.read().tsf().bit_is_set() {
-            let data = self.reg.dr.read();
-            let year =
-                2000 + data.yt().bits() as i32 * 10 + data.yu().bits() as i32;
-            let month = data.mt().bits() as u8 * 10 + data.mu().bits();
-            let day = data.dt().bits() * 10 + data.du().bits();
-            let date = time::Date::try_from_ymd(year, month, day)
-                .expect("Invalid data in RTC timestamp date register");
-            let data = self.reg.tr.read();
-            let mut hour = data.ht().bits() * 10 + data.hu().bits();
-            if data.pm().bit_is_set() {
-                hour += 12;
-            }
-            let minute = data.mnt().bits() * 10 + data.mnu().bits();
-            let second = data.st().bits() * 10 + data.su().bits();
-            let micro = self.subsec_micros();
-            let time =
-                time::Time::try_from_hms_micro(hour, minute, second, micro)
-                    .expect("Invalid data in RTC timestamp time register");
-
-            self.reg
-                .isr
-                .modify(|_, w| w.tsf().clear_bit().itsf().clear_bit());
-
-            Some(time::PrimitiveDateTime::new(date, time))
-        } else {
-            None
+    pub fn read_timestamp(&self) -> Option<DateTime<Utc>> {
+        if self.reg.isr.read().tsf().bit_is_clear() {
+            return None;
         }
+
+        let data = self.reg.dr.read();
+        let year =
+            2000 + data.yt().bits() as i32 * 10 + data.yu().bits() as i32;
+        let month = data.mt().bits() as u32 * 10 + data.mu().bits() as u32;
+        let day = data.dt().bits() as u32 * 10 + data.du().bits() as u32;
+        let date = Utc.ymd_opt(year, month, day);
+
+        let data = self.reg.tr.read();
+        let mut hour = data.ht().bits() as u32 * 10 + data.hu().bits() as u32;
+        if data.pm().bit_is_set() {
+            hour += 12; // Shouldn't be configured this way, but handle it anyway
+        }
+        let minute = data.mnt().bits() as u32 * 10 + data.mnu().bits() as u32;
+        let second = data.st().bits() as u32 * 10 + data.su().bits() as u32;
+        let micro = self.subsec_micros();
+        let time = NaiveTime::from_hms_micro_opt(hour, minute, second, micro)?;
+
+        // Clear timestamp interrupt and internal timestamp interrupt (VBat transition)
+        // TODO: Timestamp overflow flag
+        self.reg
+            .isr
+            .modify(|_, w| w.tsf().clear_bit().itsf().clear_bit());
+
+        date.and_time(time).single()
     }
 
     // TODO: Alarms

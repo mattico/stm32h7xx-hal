@@ -5,9 +5,9 @@
 
 use log::info;
 
+use chrono::prelude::*;
 use cortex_m::asm;
 use cortex_m_rt::entry;
-use time::{date, time, PrimitiveDateTime};
 
 use pac::interrupt;
 use stm32h7xx_hal::{pac, prelude::*, rtc};
@@ -43,13 +43,9 @@ fn main() -> ! {
         dp.RTC,
         backup.RTC,
         rtc::RtcClock::Lsi,
-        rtc::TimeFormat::F24,
         &ccdr.clocks,
     );
-    rtc.set_date_time(PrimitiveDateTime::new(
-        date!(2020 - 01 - 01),
-        time!(00:00),
-    ));
+    rtc.set_date_time(Utc.ymd(2000, 1, 1).and_hms(0, 0, 0));
     rtc.listen(rtc::Event::Wakeup);
     rtc.enable_wakeup(10);
 
