@@ -43,8 +43,7 @@ features = ["ethernet", "proto-ipv4", "proto-dhcpv4", "socket-tcp", "socket-raw"
 optional = true
 
 [dependencies.time]
-git = "https://github.com/time-rs/time" # see https://github.com/time-rs/time/issues/280
-branch = "main"
+version = "0.2"
 default-features = false
 optional = true
 
