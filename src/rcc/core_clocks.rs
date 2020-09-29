@@ -108,7 +108,6 @@ impl CoreClocks {
         per_ck: "per_ck",
         hse_ck: "hse_ck",
         lsi_ck: "lsi_ck",
-        // lse_ck: "lse_ck",
     }
 
     /// Returns `Some(frequency)` if the MCO1 output is running, otherwise
