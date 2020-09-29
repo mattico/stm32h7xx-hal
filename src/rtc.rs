@@ -1,6 +1,6 @@
 //! Real-Time Clock
 
-use cast::u32;
+use cast::{u32, i32, f32};
 use chrono::prelude::*;
 use core::convert::TryInto;
 
@@ -388,7 +388,7 @@ impl Rtc {
         self.wait_for_sync();
         let data = self.reg.dr.read();
         let year =
-            2000 + data.yt().bits() as i32 * 10 + data.yu().bits() as i32;
+            2000 + i32(data.yt().bits()) * 10 + i32(data.yu().bits());
         let month = data.mt().bits() as u8 * 10 + data.mu().bits();
         let day = data.dt().bits() * 10 + data.du().bits();
         NaiveDate::from_ymd_opt(year, u32(month), u32(day))
@@ -407,12 +407,12 @@ impl Rtc {
         }
         let minute = data.mnt().bits() * 10 + data.mnu().bits();
         let second = data.st().bits() * 10 + data.su().bits();
-        let micro = self.subsec_micros();
+        let micro = self.ss_to_us(self.reg.ssr.read().ss().bits());
         NaiveTime::from_hms_micro_opt(
             u32(hour),
             u32(minute),
             u32(second),
-            u32(micro),
+            micro,
         )
     }
 
@@ -433,19 +433,24 @@ impl Rtc {
     pub fn subseconds(&self) -> Option<f32> {
         self.calendar_initialized()?;
         self.wait_for_sync();
-        let ss = self.reg.ssr.read().bits() as f32;
-        let prediv_s = self.reg.prer.read().prediv_s().bits() as f32;
+        let ss = f32(self.reg.ssr.read().bits());
+        let prediv_s = f32(self.reg.prer.read().prediv_s().bits());
         Some((prediv_s - ss) / (prediv_s + 1.0))
     }
+
+    fn ss_to_us(&self, ss: u16) -> u32 {
+        let ss = u32(ss);
+        let prediv_s = u32(self.reg.prer.read().prediv_s().bits());
+        ((prediv_s - ss) * 1_000) / (prediv_s + 1)
+    } 
 
     /// Returns the fraction of seconds that have occurred since the last second tick
     /// as a number of milliseconds rounded to the nearest whole number.
     pub fn subsec_micros(&self) -> Option<u32> {
         self.calendar_initialized()?;
         self.wait_for_sync();
-        let ss = self.reg.ssr.read().ss().bits() as u32;
-        let prediv_s = self.reg.prer.read().prediv_s().bits() as u32;
-        Some(((prediv_s - ss) * 1_000) / (prediv_s + 1))
+        let ss = self.reg.ssr.read().ss().bits();
+        Some(self.ss_to_us(ss))
     }
 
     /// Returns the raw value of the synchronous subsecond counter
@@ -574,22 +579,24 @@ impl Rtc {
             return None;
         }
 
+        // Timestamp doesn't include year, get it from the main calendar
         let data = self.reg.dr.read();
-        let year =
-            2000 + data.yt().bits() as i32 * 10 + data.yu().bits() as i32;
-        let month = data.mt().bits() as u32 * 10 + data.mu().bits() as u32;
-        let day = data.dt().bits() as u32 * 10 + data.du().bits() as u32;
-        let date = NaiveDate::from_ymd_opt(year, month, day)?;
+        let year = 2000 + i32(data.yt().bits()) * 10 + i32(data.yu().bits());
+        
+        let data = self.reg.tsdr.read();
+        let month = data.mt().bits() as u8 * 10 + data.mu().bits();
+        let day = data.dt().bits() * 10 + data.du().bits();
+        let date = NaiveDate::from_ymd_opt(year, u32(month), u32(day))?;
 
-        let data = self.reg.tr.read();
-        let mut hour = data.ht().bits() as u32 * 10 + data.hu().bits() as u32;
+        let data = self.reg.tstr.read();
+        let mut hour = data.ht().bits() * 10 + data.hu().bits();
         if data.pm().bit_is_set() {
             hour += 12; // Shouldn't be configured this way, but handle it anyway
         }
-        let minute = data.mnt().bits() as u32 * 10 + data.mnu().bits() as u32;
-        let second = data.st().bits() as u32 * 10 + data.su().bits() as u32;
-        let micro = self.subsec_micros();
-        let time = NaiveTime::from_hms_micro_opt(hour, minute, second, micro)?;
+        let minute = data.mnt().bits() * 10 + data.mnu().bits();
+        let second = data.st().bits() * 10 + data.su().bits();
+        let micro = self.ss_to_us(self.reg.tsssr.read().ss().bits());
+        let time = NaiveTime::from_hms_micro_opt(u32(hour), u32(minute), u32(second), u32(micro))?;
 
         // Clear timestamp interrupt and internal timestamp interrupt (VBat transition)
         // TODO: Timestamp overflow flag
