@@ -1,6 +1,6 @@
 //! Real-Time Clock
 
-use cast::{u32, i32, f32};
+use cast::{f32, i32, u32};
 use chrono::prelude::*;
 use core::convert::TryInto;
 
@@ -387,8 +387,7 @@ impl Rtc {
         self.calendar_initialized()?;
         self.wait_for_sync();
         let data = self.reg.dr.read();
-        let year =
-            2000 + i32(data.yt().bits()) * 10 + i32(data.yu().bits());
+        let year = 2000 + i32(data.yt().bits()) * 10 + i32(data.yu().bits());
         let month = data.mt().bits() as u8 * 10 + data.mu().bits();
         let day = data.dt().bits() * 10 + data.du().bits();
         NaiveDate::from_ymd_opt(year, u32(month), u32(day))
@@ -442,7 +441,7 @@ impl Rtc {
         let ss = u32(ss);
         let prediv_s = u32(self.reg.prer.read().prediv_s().bits());
         ((prediv_s - ss) * 1_000) / (prediv_s + 1)
-    } 
+    }
 
     /// Returns the fraction of seconds that have occurred since the last second tick
     /// as a number of milliseconds rounded to the nearest whole number.
@@ -582,7 +581,7 @@ impl Rtc {
         // Timestamp doesn't include year, get it from the main calendar
         let data = self.reg.dr.read();
         let year = 2000 + i32(data.yt().bits()) * 10 + i32(data.yu().bits());
-        
+
         let data = self.reg.tsdr.read();
         let month = data.mt().bits() as u8 * 10 + data.mu().bits();
         let day = data.dt().bits() * 10 + data.du().bits();
@@ -596,7 +595,12 @@ impl Rtc {
         let minute = data.mnt().bits() * 10 + data.mnu().bits();
         let second = data.st().bits() * 10 + data.su().bits();
         let micro = self.ss_to_us(self.reg.tsssr.read().ss().bits());
-        let time = NaiveTime::from_hms_micro_opt(u32(hour), u32(minute), u32(second), u32(micro))?;
+        let time = NaiveTime::from_hms_micro_opt(
+            u32(hour),
+            u32(minute),
+            u32(second),
+            u32(micro),
+        )?;
 
         // Clear timestamp interrupt and internal timestamp interrupt (VBat transition)
         // TODO: Timestamp overflow flag
