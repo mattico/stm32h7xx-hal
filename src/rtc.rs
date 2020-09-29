@@ -172,15 +172,27 @@ impl RtcBuilder {
         let s_pre_max = 1 << 15;
 
         let (a_pre, s_pre) = if total_div <= a_pre_max {
-            (total_div, 0)
+            (total_div, 1)
         } else if total_div % a_pre_max == 0 {
             (a_pre_max, total_div / a_pre_max)
         } else {
-            todo!()
+            let mut a_pre = a_pre_max;
+            while a_pre > 1 {
+                if total_div % a_pre == 0 {
+                    break;
+                }
+                a_pre -= 1;
+            }
+            let s_pre = total_div / a_pre;
+            assert!(s_pre <= s_pre_max, "calculating RTC prescaler");
         };
 
-        rtc.prer
-            .write(|w| unsafe { w.prediv_s().bits(s_pre as u16).prediv_a().bits(a_pre as u8) });
+        rtc.prer.write(|w| unsafe {
+            w.prediv_s()
+                .bits(s_pre as u16 - 1)
+                .prediv_a()
+                .bits(a_pre as u8 - 1)
+        });
 
         // Set time format
         rtc.cr
@@ -281,6 +293,7 @@ impl Rtc {
         //self.reg.bkp[reg].write(|w| w.bits(value));
     }
 
+    /// Sets the date and time of the RTC
     pub fn set_date_time(&mut self, date: time::PrimitiveDateTime) {
         // Enter initialization mode
         self.reg.isr.modify(|_, w| w.init().set_bit());
@@ -354,12 +367,24 @@ impl Rtc {
         self.reg.isr.modify(|_, w| w.init().clear_bit());
     }
 
+    /// Returns `None` if the calendar is uninitialized
+    fn calendar_initialized(&self) -> Option<()> {
+        match self.reg.isr.read().inits().bit() {
+            true => Some(()),
+            false => None,
+        }
+    }
+
     /// Wait for initialization or shift to complete
     fn wait_for_sync(&self) {
         while self.reg.isr.read().rsf().bit_is_clear() {}
     }
 
+    /// Calendar Date
+    ///
+    /// Returns `None` if the calendar has not been initialized.
     pub fn date(&self) -> Option<time::Date> {
+        self.calendar_initialized()?;
         self.wait_for_sync();
         let data = self.reg.dr.read();
         let year = 2000 + data.yt().bits() as i32 * 10 + data.yu().bits() as i32;
@@ -370,7 +395,11 @@ impl Rtc {
         Some(date)
     }
 
+    /// Calendar Time
+    ///
+    /// Returns `None` if the calendar has not been initialized.
     pub fn time(&self) -> Option<time::Time> {
+        self.calendar_initialized()?;
         self.wait_for_sync();
         let data = self.reg.tr.read();
         let mut hour = data.ht().bits() * 10 + data.hu().bits();
@@ -385,13 +414,17 @@ impl Rtc {
         Some(time)
     }
 
+    /// Calendar Date and Time
+    ///
+    /// Returns `None` if the calendar has not been initialized.
     pub fn date_time(&self) -> Option<time::PrimitiveDateTime> {
         let date = self.date()?;
         let time = self.time()?;
         Some(time::PrimitiveDateTime::new(date, time))
     }
 
-    /// Returns the fraction of seconds that have occurred since the last second tick.
+    /// Returns the fraction of seconds that have occurred since the last second tick
+    ///
     /// The precision of this value depends on the value of the synchronous prescale divider
     /// (prediv_s) which depends on the frequency of the RTC clock. E.g. with a 32,768 Hz
     /// crystal this value has a resolution of 1/256 of a second.
