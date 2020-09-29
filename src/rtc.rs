@@ -278,7 +278,7 @@ impl Rtc {
         self.reg.isr.modify(|_, w| w.init().set_bit());
         while self.reg.isr.read().initf().bit_is_clear() {}
 
-        let mut hour = date_time.hour() as u8;
+        let hour = date_time.hour() as u8;
         let ht = hour / 10;
         let hu = hour % 10;
 

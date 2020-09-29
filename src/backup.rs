@@ -1,10 +1,17 @@
+//! Backup Power Domain
+
+/// Backup Power Domain
+#[allow(non_snake_case)]
 pub struct Backup {
     #[cfg(feature = "rtc")]
-    #[cfg_attr(feature = "rtc", allow(non_snake_case))]
     pub RTC: Rtc,
 }
 
 impl Backup {
+    /// Creates a new `Backup`
+    ///
+    /// **Safety:** Must only be called once, after the backup domain write
+    /// protection is disabled.
     pub(crate) unsafe fn new_singleton() -> Self {
         Self {
             #[cfg(feature = "rtc")]
