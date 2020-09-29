@@ -7,7 +7,7 @@ use log::info;
 
 use cortex_m_rt::entry;
 use cortex_m::asm;
-use time::{time, date};
+use time::{time, date, PrimitiveDateTime};
 
 use stm32h7xx_hal::{pac, prelude::*, rtc};
 use pac::interrupt;
@@ -41,14 +41,15 @@ fn main() -> ! {
 
     let mut rtc = rtc::RtcBuilder::new(dp.RTC, backup.RTC, rtc::RtcClock::Lsi, rtc::TimeFormat::F24)
         .open(&ccdr.clocks)
-        .or_else(|(rtc, _err)| rtc.init(date!(2020-01-01), time!(00:00), &ccdr.clocks))
+        .or_else(|(rtc, _err)| rtc.init(&ccdr.clocks))
         .expect("Unable to initialize RTC");
 
+    rtc.set_date_time(PrimitiveDateTime::new(date!(2020-01-01), time!(00:00)));
     rtc.listen(rtc::Event::Wakeup);
     rtc.enable_wakeup(10);
 
     loop {
-        info!("Time: {}", rtc.time());
+        info!("Time: {}", rtc.time().unwrap());
         rtc.unpend(rtc::Event::Wakeup);
         asm::wfi();
     }

@@ -1,6 +1,6 @@
 pub struct Backup {
     #[cfg(feature = "rtc")]
-    #[allow(non_snake_case)]
+    #[cfg_attr(feature = "rtc", allow(non_snake_case))]
     pub RTC: Rtc,
 }
 

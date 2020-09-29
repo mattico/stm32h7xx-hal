@@ -185,6 +185,7 @@ impl RtcBuilder {
             }
             let s_pre = total_div / a_pre;
             assert!(s_pre <= s_pre_max, "calculating RTC prescaler");
+            (a_pre, s_pre)
         };
 
         rtc.prer.write(|w| unsafe {
