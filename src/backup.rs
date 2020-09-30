@@ -89,13 +89,12 @@ mod rtc {
         ///
         /// **NOTE**: This can only be written one time per peripheral reset.
         /// Check `get_kernel_clk_mux()` to see if the write succeeded.
-        pub fn kernel_clk_mux(self, sel: RtcClkSel) -> Self {
+        pub fn kernel_clk_mux(&mut self, sel: RtcClkSel) {
             // unsafe: Owned exclusive access to this bitfield
             interrupt::free(|_| {
                 let ccip = unsafe { &(*RCC::ptr()).bdcr };
                 ccip.modify(|_, w| w.rtcsel().variant(sel));
             });
-            self
         }
 
         /// Return the current kernel clock selection

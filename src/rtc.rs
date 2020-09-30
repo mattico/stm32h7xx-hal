@@ -71,6 +71,7 @@ pub enum DstError {
 /// Real-Time Clock
 pub struct Rtc {
     reg: RTC,
+    prec: backup::Rtc,
 }
 
 impl Rtc {
@@ -128,7 +129,7 @@ impl Rtc {
             return Err((rtc, prec, InitError::ClockNotRunning));
         }
 
-        Ok(Rtc { reg: rtc })
+        Ok(Rtc { reg: rtc, prec })
     }
 
     /// Resets the RTC, including the backup registers, then initializes it.
@@ -138,7 +139,7 @@ impl Rtc {
         clock_source: RtcClock,
         clocks: &CoreClocks,
     ) -> Self {
-        let prec = prec.reset().enable();
+        let mut prec = prec.reset().enable();
 
         let rcc = unsafe { &*RCC::ptr() };
 
@@ -220,7 +221,7 @@ impl Rtc {
         // Exit initialization mode
         rtc.isr.modify(|_, w| w.init().free_running_mode());
 
-        Rtc { reg: rtc }
+        Rtc { reg: rtc, prec }
     }
 
     /// Reads the value of a 32-bit backup register
@@ -302,6 +303,21 @@ impl Rtc {
                 .du()
                 .bits(du)
         });
+
+        // Exit initialization mode
+        self.reg.isr.modify(|_, w| w.init().free_running_mode());
+    }
+
+    /// De-initializes the calendar and clock
+    ///
+    /// For when you lose confidince in the stored time e.g. if the LSE clock fails.
+    pub fn clear_date_time(&mut self) {
+        // Enter initialization mode
+        self.reg.isr.modify(|_, w| w.init().init_mode());
+        while self.reg.isr.read().initf().is_not_allowed() {}
+
+        self.reg.tr.reset();
+        self.reg.dr.reset();
 
         // Exit initialization mode
         self.reg.isr.modify(|_, w| w.init().free_running_mode());
@@ -601,5 +617,23 @@ impl Rtc {
             Event::Wakeup => self.reg.isr.modify(|_, w| w.wutf().clear_bit()),
             Event::Timestamp => self.reg.isr.modify(|_, w| w.tsf().clear_bit()),
         }
+    }
+
+    /// Handle a Clock Security Subsystem failure for the LSE clock
+    ///
+    /// Disables the LSE, disables the LSE CSS, and changes the RTC to use the LSI clock.
+    /// You may want to call `clear_date_time()`.
+    pub fn handle_lse_css(&mut self) {
+        if !self.is_pending(Event::LseCss) {
+            return;
+        }
+
+        let rcc = unsafe { &*RCC::ptr() };
+        rcc.bdcr.modify(|_, w| w.lsecsson().security_off().lseon().off());
+
+        // We're allowed to change this once after the LSE fails
+        self.prec.kernel_clk_mux(backup::RtcClkSel::LSI);
+
+        self.unpend(Event::LseCss);
     }
 }
