@@ -31,16 +31,25 @@ pub enum DstState {
 #[derive(Copy, Clone, PartialEq)]
 pub enum RtcClock {
     /// LSE (Low-Speed External)
+    ///
+    /// This is in the Backup power domain, and so it can
+    /// remain operational as long as VBat is present.
     Lse {
         freq: Hertz,
         bypass: bool,
         css: bool,
     },
     /// LSI (Low-Speed Internal)
+    ///
+    /// This clock remains functional in Stop or Standby mode,
+    /// but requires VDD to remain powered. LSI is an RC 
+    /// oscillator and has poor accuracy.
     Lsi,
     /// HSE (High-Speed External) divided by 2..=63
     ///
-    /// The resulting clock must be lower than 1MHz.
+    /// The resulting clock must be lower than 1MHz. This clock is
+    /// automatically disabled by hardware when the CPU enters Stop or
+    /// standby mode.
     Hse { divider: u8 },
 }
 
@@ -50,8 +59,6 @@ pub enum InitError {
     RtcNotRunning,
     ClockNotRunning,
     ConfigMismatch,
-    ClockTooFast,
-    CalendarNotInitialized,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -62,6 +69,7 @@ pub enum DstError {
     CannotSubtract,
 }
 
+/// Real-Time Clock
 pub struct Rtc {
     reg: RTC,
 }
@@ -119,10 +127,6 @@ impl Rtc {
         };
         if !clock_source_running {
             return Err((rtc, prec, InitError::ClockNotRunning));
-        }
-
-        if rtc.isr.read().inits().bit_is_clear() {
-            return Err((rtc, prec, InitError::CalendarNotInitialized));
         }
 
         Ok(Rtc { reg: rtc })
