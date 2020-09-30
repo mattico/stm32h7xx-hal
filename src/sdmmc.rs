@@ -78,6 +78,7 @@ use crate::gpio::{Alternate, AF10, AF11, AF12, AF9};
 use crate::rcc::rec::{ResetEnable, SdmmcClkSelGetter};
 use crate::rcc::{rec, CoreClocks};
 use crate::stm32::{SDMMC1, SDMMC2};
+use log::*;
 
 pub trait PinClk<SDMMC> {}
 pub trait PinCmd<SDMMC> {}
@@ -508,15 +509,19 @@ macro_rules! sdmmc {
                         .modify(|_, w| unsafe { w.pwrctrl().bits(PowerCtrl::On as u8) });
 
                     self.cmd(Cmd::idle())?;
+                    debug!("Cmd::idle completed");
 
                     // Check if cards supports CMD8 (with pattern)
                     self.cmd(Cmd::hs_send_ext_csd(0x1AA))?;
+                    debug!("Cmd::hs_send_ext_csd completed");
                     let r1 = self.sdmmc.resp1r.read().bits();
+                    debug!("r1={}", r1);
 
                     let mut card = if r1 == 0x1AA {
                         // Card echoed back the pattern. Must be at least v2
                         Card::default()
                     } else {
+                        debug!("returning Error::UnsupportedCardVersion");
                         return Err(Error::UnsupportedCardVersion);
                     };
 
