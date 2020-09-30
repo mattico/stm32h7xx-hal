@@ -38,8 +38,10 @@ pub enum RtcClock {
     },
     /// LSI (Low-Speed Internal)
     Lsi,
-    /// HSE (High-Speed External) Divided by 32
-    HseDiv32,
+    /// HSE (High-Speed External) divided by 2..=63
+    ///
+    /// The resulting clock must be lower than 1MHz.
+    Hse { divider: u8 },
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -91,12 +93,15 @@ impl Rtc {
             return Err((rtc, prec, InitError::RtcNotRunning));
         }
 
-        let bdcr = unsafe { (&*RCC::ptr()).bdcr.read() };
+        let rcc = unsafe { &*RCC::ptr() };
+        let bdcr = rcc.bdcr.read();
 
         let clock_source_matches =
             match (clock_source, prec.get_kernel_clk_mux()) {
                 (RtcClock::Lsi, backup::RtcClkSel::LSI) => true,
-                (RtcClock::HseDiv32, backup::RtcClkSel::HSE) => true,
+                (RtcClock::Hse { divider }, backup::RtcClkSel::HSE) => {
+                    rcc.cfgr.read().rtcpre().bits() == divider
+                }
                 (RtcClock::Lse { bypass, css, .. }, backup::RtcClkSel::LSE) => {
                     bypass == bdcr.lsebyp().is_bypassed()
                         && css == bdcr.lsecsson().is_security_on()
@@ -109,7 +114,7 @@ impl Rtc {
 
         let clock_source_running = match clock_source {
             RtcClock::Lsi => clocks.lsi_ck().is_some(),
-            RtcClock::HseDiv32 => clocks.hse_ck().is_some(),
+            RtcClock::Hse { .. } => clocks.hse_ck().is_some(),
             RtcClock::Lse { .. } => bdcr.lserdy().is_ready(),
         };
         if !clock_source_running {
@@ -132,36 +137,43 @@ impl Rtc {
     ) -> Self {
         let prec = prec.reset().enable();
 
-        let bdcr = unsafe { &(*RCC::ptr()).bdcr };
+        let rcc = unsafe { &*RCC::ptr() };
 
-        // Initialize LSE if required
-        if let RtcClock::Lse { bypass, .. } = clock_source {
-            // Ensure LSE is on and stable
-            bdcr.modify(|_, w| w.lseon().on().lsebyp().bit(bypass));
-            while bdcr.read().lserdy().is_not_ready() {}
+        // Check and configure clock source
+        let ker_ck = match clock_source {
+            RtcClock::Lse { bypass, freq, .. } => {
+                // Ensure LSE is on and stable
+                rcc.bdcr.modify(|_, w| w.lseon().on().lsebyp().bit(bypass));
+                while rcc.bdcr.read().lserdy().is_not_ready() {}
+
+                Some(freq)
+            }
+            RtcClock::Hse { divider } => {
+                // Set HSE divider
+                assert!(divider < 64, "HSE Divider larger than 63");
+                rcc.cfgr.modify(|_, w| w.rtcpre().bits(divider));
+
+                clocks.hse_ck().map(|x| Hertz(x.0 / u32(divider)))
+            }
+            RtcClock::Lsi => clocks.lsi_ck(),
+        }
+        .expect("rtc_ker_ck not running")
+        .0;
+
+        if ker_ck > (1 << 22) {
+            panic!("rtc_ker_ck too fast for prescaler");
         }
 
         // Select RTC kernel clock
         prec.kernel_clk_mux(match clock_source {
-            RtcClock::HseDiv32 => backup::RtcClkSel::HSE,
+            RtcClock::Hse { .. } => backup::RtcClkSel::HSE,
             RtcClock::Lsi => backup::RtcClkSel::LSI,
             RtcClock::Lse { .. } => backup::RtcClkSel::LSE,
         });
 
         // Now we can enable CSS, if required
         if let RtcClock::Lse { css: true, .. } = clock_source {
-            bdcr.modify(|_, w| w.lsecsson().security_on());
-        }
-
-        let ker_ck = match clock_source {
-            RtcClock::Lse { freq, .. } => Some(freq),
-            RtcClock::Lsi => clocks.lsi_ck(),
-            RtcClock::HseDiv32 => clocks.hse_ck().map(|x| Hertz(x.0 / 32)),
-        }
-        .expect("rtc_ker_ck not running")
-        .0;
-        if ker_ck > (1 << 22) {
-            panic!("rtc_ker_ck too fast for prescaler");
+            rcc.bdcr.modify(|_, w| w.lsecsson().security_on());
         }
 
         // Disable RTC register write protection
