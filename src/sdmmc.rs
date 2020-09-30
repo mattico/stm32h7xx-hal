@@ -78,7 +78,7 @@ use crate::gpio::{Alternate, AF10, AF11, AF12, AF9};
 use crate::rcc::rec::{ResetEnable, SdmmcClkSelGetter};
 use crate::rcc::{rec, CoreClocks};
 use crate::stm32::{SDMMC1, SDMMC2};
-use log::*;
+use rtt_target::rprintln;
 
 pub trait PinClk<SDMMC> {}
 pub trait PinCmd<SDMMC> {}
@@ -424,7 +424,7 @@ macro_rules! sdmmc {
                     // Enforce AHB and SDMMC_CK clock relation. See RM0433 Rev 7
                     // Section 55.5.8
                     let sdmmc_bus_bandwidth = new_clock.0 * (width as u32);
-                    debug_assert!(self.hclk.0 > 3 * sdmmc_bus_bandwidth / 32);
+                    assert!(self.hclk.0 > 3 * sdmmc_bus_bandwidth / 32);
                     self.clock = new_clock;
 
                     // CPSMACT and DPSMACT must be 0 to set CLKDIV
@@ -509,19 +509,19 @@ macro_rules! sdmmc {
                         .modify(|_, w| unsafe { w.pwrctrl().bits(PowerCtrl::On as u8) });
 
                     self.cmd(Cmd::idle())?;
-                    debug!("Cmd::idle completed");
+                    rprintln!("Cmd::idle completed");
 
                     // Check if cards supports CMD8 (with pattern)
                     self.cmd(Cmd::hs_send_ext_csd(0x1AA))?;
-                    debug!("Cmd::hs_send_ext_csd completed");
+                    rprintln!("Cmd::hs_send_ext_csd completed");
                     let r1 = self.sdmmc.resp1r.read().bits();
-                    debug!("r1={}", r1);
+                    rprintln!("r1={}", r1);
 
                     let mut card = if r1 == 0x1AA {
                         // Card echoed back the pattern. Must be at least v2
                         Card::default()
                     } else {
-                        debug!("returning Error::UnsupportedCardVersion");
+                        rprintln!("returning Error::UnsupportedCardVersion");
                         return Err(Error::UnsupportedCardVersion);
                     };
 
