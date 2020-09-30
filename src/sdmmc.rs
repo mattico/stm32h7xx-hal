@@ -78,7 +78,9 @@ use crate::gpio::{Alternate, AF10, AF11, AF12, AF9};
 use crate::rcc::rec::{ResetEnable, SdmmcClkSelGetter};
 use crate::rcc::{rec, CoreClocks};
 use crate::stm32::{SDMMC1, SDMMC2};
-use rtt_target::rprintln;
+use log::debug;
+use cortex_m_semihosting::hio;
+use core::fmt::Write;
 
 pub trait PinClk<SDMMC> {}
 pub trait PinCmd<SDMMC> {}
@@ -501,6 +503,7 @@ macro_rules! sdmmc {
                 /// Initializes card (if present) and sets the bus at the
                 /// specified frequency.
                 pub fn init_card(&mut self, freq: impl Into<Hertz>) -> Result<(), Error> {
+                    let mut stdout = hio::hstdout().unwrap();
                     let freq = freq.into();
 
                     // Enable power to card
@@ -509,21 +512,23 @@ macro_rules! sdmmc {
                         .modify(|_, w| unsafe { w.pwrctrl().bits(PowerCtrl::On as u8) });
 
                     self.cmd(Cmd::idle())?;
-                    rprintln!("Cmd::idle completed");
+                    write!(stdout, "Cmd::idle completed");
 
                     // Check if cards supports CMD8 (with pattern)
                     self.cmd(Cmd::hs_send_ext_csd(0x1AA))?;
-                    rprintln!("Cmd::hs_send_ext_csd completed");
+                    write!(stdout, "Cmd::hs_send_ext_csd completed");
                     let r1 = self.sdmmc.resp1r.read().bits();
-                    rprintln!("r1={}", r1);
+                    write!(stdout, "r1={}", r1);
 
                     let mut card = if r1 == 0x1AA {
                         // Card echoed back the pattern. Must be at least v2
                         Card::default()
                     } else {
-                        rprintln!("returning Error::UnsupportedCardVersion");
+                        write!(stdout, "returning Error::UnsupportedCardVersion");
                         return Err(Error::UnsupportedCardVersion);
                     };
+
+                    write!(stdout, "ocr...");
 
                     let ocr = loop {
                         // Signal that next command is a app command
@@ -547,6 +552,8 @@ macro_rules! sdmmc {
                         }
                     };
 
+                    write!(stdout, "ocr complete");
+
                     if ocr.high_capacity() {
                         // Card is SDHC or SDXC or SDUC
                         card.card_type = CardCapacity::SDHC;
@@ -555,6 +562,7 @@ macro_rules! sdmmc {
                     }
                     card.ocr = ocr;
 
+                    write!(stdout, "cid...");
                     // Get CID
                     self.cmd(Cmd::all_send_cid())?; // CMD2
                     let cid = ((self.sdmmc.resp1r.read().bits() as u128) << 96)
@@ -563,10 +571,12 @@ macro_rules! sdmmc {
                         | self.sdmmc.resp4r.read().bits() as u128;
                     card.cid = cid.into();
 
+                    write!(stdout, "rca...");
                     // Get RCA
                     self.cmd(Cmd::send_rel_addr())?;
                     card.rca = self.sdmmc.resp1r.read().bits() >> 16;
 
+                    write!(stdout, "csd...");
                     // Get CSD
                     self.cmd(Cmd::send_csd(card.rca << 16))?;
                     let csd = ((self.sdmmc.resp1r.read().bits() as u128) << 96)
@@ -578,6 +588,7 @@ macro_rules! sdmmc {
 
                     self.select_card(Some(&card))?;
 
+                    write!(stdout, "get_scr...");
                     self.get_scr(&mut card)?;
 
                     // Set bus width
@@ -586,7 +597,9 @@ macro_rules! sdmmc {
                         BusWidth::Four if card.scr.bus_width_four() => (BusWidth::Four, 2),
                         _ => (BusWidth::One, 0),
                     };
+                    write!(stdout, "rca...");
                     self.cmd(Cmd::app_cmd(card.rca << 16))?;
+                    write!(stdout, "acmd...");
                     self.cmd(Cmd::cmd6(acmd_arg))?; // ACMD6: Bus Width
 
                     // CPSMACT and DPSMACT must be 0 to set WIDBUS
@@ -630,6 +643,7 @@ macro_rules! sdmmc {
                     }
 
                     // Read status after signalling change
+                    write!(stdout, "read_sd_status...");
                     self.read_sd_status()?;
 
                     Ok(())
@@ -901,11 +915,16 @@ macro_rules! sdmmc {
 
                 /// Get SD CARD Configuration Register (SCR)
                 fn get_scr(&self, card: &mut Card) -> Result<(), Error> {
+                    let mut stdout = hio::hstdout().unwrap();
+                    write!(stdout, "set_block_length(8)");
+
                     // Read the the 64-bit SCR register
                     self.cmd(Cmd::set_block_length(8))?; // CMD16
+                    write!(stdout, "rca");
                     self.cmd(Cmd::app_cmd(card.rca << 16))?;
 
                     self.start_datapath_transfer(8, 3, Dir::CardToHost);
+                    write!(stdout, "cmd51");
                     self.cmd(Cmd::cmd51())?;
 
                     let mut scr = [0; 2];
