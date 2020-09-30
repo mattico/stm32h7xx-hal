@@ -61,10 +61,7 @@
 
 use core::fmt;
 
-use sdio_host::{
-    BusWidth, CardCapacity, CardStatus, CurrentState, SDStatus, CID, CSD, OCR,
-    SCR,
-};
+use sdio_host::{BusWidth, CardCapacity, CardStatus, CurrentState, SDStatus, CID, CSD, OCR, SCR};
 
 use crate::gpio::gpioa::PA0;
 use crate::gpio::gpiob::{PB14, PB15, PB3, PB4, PB8, PB9};
@@ -350,12 +347,7 @@ pub trait SdmmcExt<SDMMC>: Sized {
 
     /// Create and enable the Sdmmc device. Initially the bus is clocked at
     /// <400kHz, so that SD cards can be initialised.
-    fn sdmmc<PINS>(
-        self,
-        _pins: PINS,
-        prec: Self::Rec,
-        clocks: &CoreClocks,
-    ) -> Sdmmc<SDMMC>
+    fn sdmmc<PINS>(self, _pins: PINS, prec: Self::Rec, clocks: &CoreClocks) -> Sdmmc<SDMMC>
     where
         PINS: Pins<SDMMC>;
 
@@ -586,7 +578,21 @@ macro_rules! sdmmc {
                     self.select_card(Some(&card))?;
 
                     rprintln!("get_scr...");
-                    self.get_scr(&mut card)?;
+                    let mut retries = 0;
+                    loop {
+                        match self.get_scr(&mut card) {
+                            Ok(_) => break,
+                            Err(e) => {
+                                if retries >= 5 {
+                                    return Err(e);
+                                }
+                                rprintln!("get_scr failed, retrying");
+                                retries += 1;
+                                cortex_m::asm::delay(100);
+                            }
+                        }
+                    }
+
 
                     // Set bus width
                     let (width, acmd_arg) = match self.bus_width {
@@ -916,7 +922,7 @@ macro_rules! sdmmc {
 
                     // Read the the 64-bit SCR register
                     self.cmd(Cmd::set_block_length(8))?; // CMD16
-                    rprintln!("rca");
+                    rprintln!("rca({})", card.rca << 16);
                     self.cmd(Cmd::app_cmd(card.rca << 16))?;
 
                     self.start_datapath_transfer(8, 3, Dir::CardToHost);
