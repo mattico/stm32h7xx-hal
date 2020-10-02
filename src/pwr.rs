@@ -52,6 +52,7 @@
 use crate::stm32::PWR;
 #[cfg(feature = "revision_v")]
 use crate::stm32::{RCC, SYSCFG};
+use crate::rcc::backup::BackupREC;
 
 /// Extension trait that constrains the `PWR` peripheral
 pub trait PwrExt {
@@ -104,7 +105,7 @@ pub enum VoltageScale {
 /// longer be changed.
 pub struct PowerConfiguration {
     pub(crate) vos: VoltageScale,
-    pub(crate) backup: Option<crate::backup::Backup>,
+    pub(crate) backup: Option<BackupREC>,
 }
 
 impl PowerConfiguration {
@@ -113,7 +114,7 @@ impl PowerConfiguration {
         self.vos
     }
 
-    pub fn backup(&mut self) -> Option<crate::backup::Backup> {
+    pub fn backup(&mut self) -> Option<BackupREC> {
         self.backup.take()
     }
 }
@@ -295,7 +296,7 @@ impl Pwr {
 
         // Disable backup power domain write protection
         self.rb.cr1.modify(|_, w| w.dbp().set_bit());
-        let backup = unsafe { crate::backup::Backup::new_singleton() };
+        let backup = unsafe { BackupREC::new_singleton() };
 
         PowerConfiguration {
             vos,

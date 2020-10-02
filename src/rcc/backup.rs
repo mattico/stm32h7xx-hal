@@ -1,13 +1,35 @@
-//! Backup Power Domain
+//! Backup Power Domain Reset, Enable, and Clock Control
+//!
+//! Reset, enable and Clock functionality for Backup Power Domain
+//! peripherals. The backup power domain can run separately and be
+//! powered separately from the other domains; these peripherals may
+//! be enabled even after a core reset.
+//!
+//! # Example
+//!
+//! ```
+//! ...
+//! // Constrain and Freeze power
+//! let pwr = dp.PWR.constrain();
+//! let mut pwrcfg = pwr.freeze();
+//! 
+//! // Take the backup power domain
+//! let backup = pwrcfg.backup().unwrap();
+//!
+//! if backup.RTC.is_enabled() {
+//!     println!("RTC Enabled");
+//! }
+//! ```
 
-/// Backup Power Domain
-#[allow(non_snake_case)]
-pub struct Backup {
+/// Backup Power Domain Peripheral Reset and Enable Control
+#[allow(non_snake_case, missing_docs)]
+#[non_exhaustive]
+pub struct BackupREC {
     #[cfg(feature = "rtc")]
     pub RTC: Rtc,
 }
 
-impl Backup {
+impl BackupREC {
     /// Creates a new `Backup`
     ///
     /// # Safety
