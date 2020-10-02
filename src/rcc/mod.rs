@@ -151,6 +151,7 @@ use crate::time::Hertz;
 
 mod core_clocks;
 mod pll;
+pub mod backup;
 pub mod rec;
 
 pub use core_clocks::CoreClocks;

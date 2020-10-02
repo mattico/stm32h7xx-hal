@@ -3,7 +3,7 @@
 use cast::{u16, u8, f32, i32, u32};
 use chrono::prelude::*;
 
-use crate::backup;
+use crate::rcc::backup;
 use crate::rcc::rec::ResetEnable;
 use crate::rcc::CoreClocks;
 use crate::stm32::{RCC, RTC};
@@ -226,14 +226,18 @@ impl Rtc {
 
     /// Reads the value of a 32-bit backup register
     ///
-    /// **Panics:** if reg is greater than 31
+    /// # Panics
+    ///
+    /// Panics if `reg` is greater than 31.
     pub fn read_backup_reg(&self, reg: u8) -> u32 {
         self.reg.bkpr[reg as usize].read().bkp().bits()
     }
 
     /// Writes `value` to a 32-bit backup register
     ///
-    /// **Panics:** if reg is greater than 31
+    /// # Panics
+    /// 
+    /// Panics if `reg` is greater than 31.
     pub fn write_backup_reg(&mut self, reg: u8, value: u32) {
         self.reg.bkpr[reg as usize].write(|w| w.bkp().bits(value));
     }
@@ -349,7 +353,7 @@ impl Rtc {
         NaiveDate::from_ymd_opt(year, u32(month), u32(day))
     }
 
-    /// Time
+    /// Current Time
     ///
     /// Returns `None` if the calendar has not been initialized
     pub fn time(&self) -> Option<NaiveTime> {
@@ -480,7 +484,9 @@ impl Rtc {
 
     /// Configures the wakeup timer to trigger periodically after `interval` seconds
     ///
-    /// **NOTE:** Panics if interval is greater than 2^17-1
+    /// # Panics
+    ///
+    /// Panics if interval is greater than 2¹⁷-1.
     pub fn enable_wakeup(&mut self, interval: u32) {
         self.reg.cr.modify(|_, w| w.wute().disabled());
         self.reg.isr.modify(|_, w| w.wutf().clear());
@@ -505,6 +511,7 @@ impl Rtc {
         self.reg.cr.modify(|_, w| w.wute().enabled());
     }
 
+    /// Disables the wakeup timer
     pub fn disable_wakeup(&mut self) {
         self.reg.cr.modify(|_, w| w.wute().disabled());
         self.reg.isr.modify(|_, w| w.wutf().clear());
