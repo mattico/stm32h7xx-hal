@@ -1,6 +1,6 @@
 //! Real-Time Clock
 
-use cast::{u16, u8, f32, i32, u32};
+use cast::{f32, i32, u16, u32, u8};
 use chrono::prelude::*;
 
 use crate::rcc::backup;
@@ -41,7 +41,7 @@ pub enum RtcClock {
     /// LSI (Low-Speed Internal)
     ///
     /// This clock remains functional in Stop or Standby mode,
-    /// but requires VDD to remain powered. LSI is an RC 
+    /// but requires VDD to remain powered. LSI is an RC
     /// oscillator and has poor accuracy.
     Lsi,
     /// HSE (High-Speed External) divided by 2..=63
@@ -211,12 +211,12 @@ impl Rtc {
             (a_pre, s_pre)
         };
 
-        rtc.prer.write(|w|
+        rtc.prer.write(|w| {
             w.prediv_s()
                 .bits(u16(s_pre - 1).unwrap())
                 .prediv_a()
                 .bits(u8(a_pre - 1).unwrap())
-        );
+        });
 
         // Exit initialization mode
         rtc.isr.modify(|_, w| w.init().free_running_mode());
@@ -236,7 +236,7 @@ impl Rtc {
     /// Writes `value` to a 32-bit backup register
     ///
     /// # Panics
-    /// 
+    ///
     /// Panics if `reg` is greater than 31.
     pub fn write_backup_reg(&mut self, reg: u8, value: u32) {
         self.reg.bkpr[reg as usize].write(|w| w.bkp().bits(value));
@@ -260,7 +260,7 @@ impl Rtc {
         let st = second / 10;
         let su = second % 10;
 
-        self.reg.tr.write(|w|
+        self.reg.tr.write(|w| {
             w.pm()
                 .clear_bit()
                 .ht()
@@ -275,7 +275,7 @@ impl Rtc {
                 .bits(st)
                 .su()
                 .bits(su)
-        );
+        });
 
         let year = date_time.year();
         let yt = ((year - 2000) / 10) as u8;
@@ -500,11 +500,9 @@ impl Rtc {
                 .expect("Interval was too large for wakeup timer");
             self.reg.wutr.write(|w| w.wut().bits(interval));
         } else {
-            self.reg
-                .cr
-                .modify(|_, w| w.wucksel().clock_spare());
-            let interval = u16(interval)
-                .expect("Interval was too large for wakeup timer");
+            self.reg.cr.modify(|_, w| w.wucksel().clock_spare());
+            let interval =
+                u16(interval).expect("Interval was too large for wakeup timer");
             self.reg.wutr.write(|w| w.wut().bits(interval));
         }
 
@@ -565,9 +563,7 @@ impl Rtc {
 
         // Clear timestamp interrupt and internal timestamp interrupt (VBat transition)
         // TODO: Timestamp overflow flag
-        self.reg
-            .isr
-            .modify(|_, w| w.tsf().clear().itsf().clear());
+        self.reg.isr.modify(|_, w| w.tsf().clear().itsf().clear());
 
         Some(date.and_time(time))
     }
@@ -636,7 +632,8 @@ impl Rtc {
         }
 
         let rcc = unsafe { &*RCC::ptr() };
-        rcc.bdcr.modify(|_, w| w.lsecsson().security_off().lseon().off());
+        rcc.bdcr
+            .modify(|_, w| w.lsecsson().security_off().lseon().off());
 
         // We're allowed to change this once after the LSE fails
         self.prec.kernel_clk_mux(backup::RtcClkSel::LSI);

@@ -149,9 +149,9 @@ use crate::stm32::rcc::pllckselr::PLLSRC_A as PLLSRC;
 use crate::stm32::{RCC, SYSCFG};
 use crate::time::Hertz;
 
+pub mod backup;
 mod core_clocks;
 mod pll;
-pub mod backup;
 pub mod rec;
 
 pub use core_clocks::CoreClocks;

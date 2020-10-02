@@ -49,10 +49,10 @@
 //! power supply method, `freeze` will panic until you power on reset
 //! your board.
 
+use crate::rcc::backup::BackupREC;
 use crate::stm32::PWR;
 #[cfg(feature = "revision_v")]
 use crate::stm32::{RCC, SYSCFG};
-use crate::rcc::backup::BackupREC;
 
 /// Extension trait that constrains the `PWR` peripheral
 pub trait PwrExt {

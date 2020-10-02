@@ -12,7 +12,7 @@
 //! // Constrain and Freeze power
 //! let pwr = dp.PWR.constrain();
 //! let mut pwrcfg = pwr.freeze();
-//! 
+//!
 //! // Take the backup power domain
 //! let backup = pwrcfg.backup().unwrap();
 //!
