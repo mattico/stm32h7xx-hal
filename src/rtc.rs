@@ -7,7 +7,7 @@ use crate::rcc::backup;
 use crate::rcc::rec::ResetEnable;
 use crate::rcc::CoreClocks;
 use crate::stm32::{RCC, RTC};
-use crate::time::rate::Hertz;
+use crate::time::Hertz;
 
 pub enum Event {
     AlarmA,
