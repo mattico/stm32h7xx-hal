@@ -7,7 +7,7 @@ use crate::stm32::{SAI1, SAI4};
 
 // clocks
 use crate::rcc::{rec, CoreClocks, ResetEnable};
-use crate::time::Hertz;
+use crate::time::rate::Hertz;
 use stm32h7::Variant::Val;
 
 mod pdm;
