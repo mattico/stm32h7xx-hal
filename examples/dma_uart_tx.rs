@@ -8,12 +8,11 @@
 #[path = "utilities/logger.rs"]
 mod logger;
 
-use bbqueue::{BBBuffer, ConstBBBuffer, Consumer, GrantR, Producer, PtrStorage};
+use bbqueue::{BBBuffer, ConstBBBuffer, Consumer, GrantR, Producer, consts::*};
 use core::fmt::{self, Write};
 use core::cell::RefCell;
-use core::ptr::NonNull;
 use cortex_m::interrupt::Mutex;
-use cortex_m_rt::entry;
+use cortex_m_rt::{entry, pre_init};
 use log::info;
 use stm32h7xx_hal::{pac, prelude::*};
 use stm32h7xx_hal::interrupt;
@@ -22,22 +21,17 @@ use stm32h7xx_hal::rcc::ResetEnable;
 
 // DMA2 can only read from memory in its domain (D2), so we can't use regular stack/heap.
 // Use SRAM3 to store our queue instead.
-const SRAM_3: *mut u8 = 0x30040000 as *mut _;
-static QUEUE: BBBuffer<PtrStorage> = unsafe {
-    BBBuffer(ConstBBBuffer::new_ptr(
-        NonNull::new_unchecked(SRAM_3),
-        8192,
-    ))
-};
+#[link_section = ".sram3"]
+static mut QUEUE: MaybeUninit<BBBuffer<U8192>> = BBBuffer(ConstBBBuffer::new());
 
 static DMA: Mutex<RefCell<Option<DmaState>>> = Mutex::new(RefCell::new(None));
-static PROD: Mutex<RefCell<Option<Producer<'static, PtrStorage>>>> = Mutex::new(RefCell::new(None));
+static PROD: Mutex<RefCell<Option<Producer<'static, U8192>>>> = Mutex::new(RefCell::new(None));
 
 struct DmaState {
     dma: pac::DMA2,
     uart: pac::USART3,
-    cons: Consumer<'static, PtrStorage>,
-    grant: Option<GrantR<'static, PtrStorage>>,
+    cons: Consumer<'static, U8192>,
+    grant: Option<GrantR<'static, U8192>>,
 }
 
 impl DmaState {
@@ -81,10 +75,9 @@ impl DmaState {
             });
             
             self.dma.st[1].cr.modify(|_, w| w.en().enabled()); // Enable stream
-    
-            self.uart.cr3.write(|w| w.dmat().enabled()); // Enable UART DMA
-
             while self.dma.st[1].cr.read().en().is_disabled() {}
+
+            self.uart.cr3.write(|w| w.dmat().enabled()); // Enable UART DMA
     
             // Store grant so interrupt can check on progress
             assert!(self.grant.is_none());
@@ -184,6 +177,21 @@ impl fmt::Write for Writer {
     }
 }
 
+#[pre_init]
+unsafe fn pre_init() {
+    // QUEUE is in .sram3 not .data, so it doesn't get initialized by the runtime.
+    // For BBQueue 0.4.10, all zero is the correct initialization.
+    // We do this in pre_init so the compiler doesn't eliminate it or reorder it,
+    // and so it's harder to misuse the queue in main().
+    // Alternatively use https://github.com/jamesmunns/bbqueue/pull/70
+    let mut ptr = 0x30040000 as *mut u32;
+    let end = ptr.offset(core::mem::size_of::<BBBuffer<U8192>>() as isize / 4);
+    while ptr < end {
+        core::ptr::write_volatile(ptr, 0);
+        ptr = ptr.offset(1);
+    }
+}
+
 #[entry]
 fn main() -> ! {
     logger::init();
@@ -199,18 +207,24 @@ fn main() -> ! {
     let pwr = dp.PWR.constrain();
     let vos = pwr.freeze();
 
+    // Enable SRAM3
+    info!("Setup SRAM3...                ");
+    dp.RCC.ahb2enr.modify(|_, w| w.sram3en().enabled());
+
     info!("Setup MPU...                  ");
-    // Disable cache for QUEUE so writes to it don't pollute dcache and actually complete before DMA reads
+    // Disable cache for QUEUE so writes to it don't pollute dcache and actually complete before DMA reads.
+    // Note the buffer in QUEUE may not be laid out at the beginning of the struct so you can't shrink
+    // the region to just the size of the buffer.
     // https://community.st.com/s/article/FAQ-DMA-is-not-working-on-STM32H7-devices
     unsafe {
         cp.MPU.ctrl.write(0b101); // Enable MPU and Default Memory Map
         cp.MPU.rnr.write(0); // Region 0
-        cp.MPU.rbar.write(SRAM_3 as u32); // SRAM3 Address
+        cp.MPU.rbar.write(&QUEUE as *const _ as u32); // SRAM3 Address
         cp.MPU.rasr.write(
             1 << 28 // Disable instruction fetch
             | 0b011 << 24 // RW/RW
             | 0b001000 << 16 // Regular memory, non-cacheable
-            | 12 << 1 // Size: 2^13 = 8192: just the buffer
+            | 13 << 1 // Size: 2^14 = 16K
             | 1, // Enabled
         );
     }
@@ -245,7 +259,7 @@ fn main() -> ! {
     // Enable DMA interrupt
     unsafe { pac::NVIC::unmask(pac::Interrupt::DMA2_STR1); }
 
-    let (prod, cons) = QUEUE.try_split().unwrap();
+    let (prod, cons) = unsafe { QUEUE.try_split().unwrap() };
     cortex_m::interrupt::free(|cs| {
         PROD.borrow(cs).borrow_mut().replace(prod);
         DMA.borrow(cs).borrow_mut().replace(DmaState {
