@@ -22,7 +22,7 @@ use stm32h7xx_hal::rcc::ResetEnable;
 // DMA2 can only read from memory in its domain (D2), so we can't use regular stack/heap.
 // Use SRAM3 to store our queue instead.
 #[link_section = ".sram3"]
-static mut QUEUE: MaybeUninit<BBBuffer<U8192>> = BBBuffer(ConstBBBuffer::new());
+static mut QUEUE: BBBuffer<U8192> = BBBuffer(ConstBBBuffer::new());
 
 static DMA: Mutex<RefCell<Option<DmaState>>> = Mutex::new(RefCell::new(None));
 static PROD: Mutex<RefCell<Option<Producer<'static, U8192>>>> = Mutex::new(RefCell::new(None));
@@ -38,16 +38,16 @@ impl DmaState {
     pub fn start_dma_tx(&mut self) {   
         if let Ok(grant) = self.cons.read() {
             // Configure memory source for DMA
-            self.dma.st[1].m0ar.write(|w| w.m0a().bits(grant.as_ptr() as u32));
+            self.dma.st[1].m0ar.write(|w| unsafe { w.m0a().bits(grant.as_ptr() as u32) });
             self.dma.st[1].ndtr.write(|w| w.ndt().bits(grant.len() as u16));
 
             // Configure DMA destination
             let usart3_tdr = pac::USART3::ptr() as u32 + 0x28;
-            self.dma.st[1].par.write(|w| w.pa().bits(usart3_tdr));
+            self.dma.st[1].par.write(|w| unsafe { w.pa().bits(usart3_tdr) });
 
             // Configure DMA parameters
             self.dma.st[1].cr.write(|w| {
-                unsafe { w.bits(1 << 20) } // TRBUFF enable, required for UARTs
+                w.trbuff().enabled()
                     .dir().memory_to_peripheral()
                     .minc().incremented()
                     .pinc().fixed()
