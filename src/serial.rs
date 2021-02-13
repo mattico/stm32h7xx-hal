@@ -57,6 +57,11 @@ pub enum Error {
     Parity,
 }
 
+/// Enabled serial peripheral (type state)
+pub struct Enabled;
+/// Disabled serial peripheral (type state)
+pub struct Disabled;
+
 /// Interrupt event
 #[derive(Copy, Clone, PartialEq)]
 pub enum Event {
@@ -351,8 +356,9 @@ uart_pins! {
 }
 
 /// Serial abstraction
-pub struct Serial<USART> {
+pub struct Serial<USART, ED> {
     usart: USART,
+    _ed: PhantomData<ED>,
 }
 
 /// Serial receiver
@@ -374,14 +380,14 @@ pub trait SerialExt<USART>: Sized {
         config: impl Into<config::Config>,
         prec: Self::Rec,
         clocks: &CoreClocks,
-    ) -> Result<Serial<USART>, config::InvalidConfig>;
+    ) -> Result<Serial<USART, Enabled>, config::InvalidConfig>;
 
     fn serial_unchecked(
         self,
         config: impl Into<config::Config>,
         prec: Self::Rec,
         clocks: &CoreClocks,
-    ) -> Result<Serial<USART>, config::InvalidConfig>;
+    ) -> Result<Serial<USART, Enabled>, config::InvalidConfig>;
 
     #[deprecated(since = "0.7.0", note = "Deprecated in favour of .serial(..)")]
     fn usart(
@@ -390,7 +396,7 @@ pub trait SerialExt<USART>: Sized {
         config: impl Into<config::Config>,
         prec: Self::Rec,
         clocks: &CoreClocks,
-    ) -> Result<Serial<USART>, config::InvalidConfig> {
+    ) -> Result<Serial<USART, Enabled>, config::InvalidConfig> {
         self.serial(pins, config, prec, clocks)
     }
 
@@ -403,7 +409,7 @@ pub trait SerialExt<USART>: Sized {
         config: impl Into<config::Config>,
         prec: Self::Rec,
         clocks: &CoreClocks,
-    ) -> Result<Serial<USART>, config::InvalidConfig> {
+    ) -> Result<Serial<USART, Enabled>, config::InvalidConfig> {
         self.serial_unchecked(config, prec, clocks)
     }
 }
@@ -415,7 +421,7 @@ macro_rules! usart {
         $(
             /// Configures a USART peripheral to provide serial
             /// communication
-            impl Serial<$USARTX> {
+            impl Serial<$USARTX, Enabled> {
                 pub fn $usartX(
                     usart: $USARTX,
                     config: impl Into<config::Config>,
@@ -497,7 +503,96 @@ macro_rules! usart {
                             })
                     });
 
-                    Ok(Serial { usart })
+                    Ok(Serial { usart, _ed: PhantomData })
+                }
+
+                /// Disables the serial peripheral. All interrupt generation is disabled.
+                /// Any serial operation is disabled and completed, FIFOs are flushed,
+                /// interrupt flags are cleared.
+                /// Configuration is not reset.
+                pub fn disable(self) -> Serial<$USARTX, Disabled> {
+                    // Disable interrupts
+                    self.usart.cr1.modify(|_, w|
+                        w.rxneie().disabled()
+                        .txeie().disabled()
+                        .peie().disabled()
+                        .tcie().disabled());
+                    self.usart.cr3.modify(|_, w|
+                        w.eie().disabled()
+                        .rxftie().clear_bit()
+                        .txftie().clear_bit());
+
+                    // Disable TX DMA
+                    if self.usart.cr3.read().dmat().bit_is_set() {
+                        self.usart.cr3.modify(|_, w| w.dmat().clear_bit());
+                        // TODO: disable DMA stream?
+                    }
+
+                    // Disable RX DMA
+                    if self.usart.cr3.read().dmar().bit_is_set() {
+                        self.usart.cr3.modify(|_, w| w.dmar().clear_bit());
+                        // TODO: disable DMA stream?
+                    }
+
+                    self.usart.cr1.modify(|_, w| w.te().disabled()); // Disable transmit
+                    while self.usart.isr.read().tc().bit_is_clear() {} // Wait for transmission completed
+
+                    // Disable USART (see RM0433 48.7.1)
+                    self.usart.cr1.modify(|_, w| w.ue().disabled());
+
+                    Serial {
+                        usart: self.usart,
+                        _ed: PhantomData,
+                    }
+                }
+
+                /// Releases the serial peripheral
+                pub fn release(self) -> $USARTX {
+                    // Wait until both TXFIFO and shift register are empty
+                    while self.usart.isr.read().tc().bit_is_clear() {}
+
+                    self.usart
+                }
+
+                /// Splits the serial peripheral into transmit and receive handles
+                pub fn split(self) -> (Tx<$USARTX>, Rx<$USARTX>) {
+                    (
+                        Tx {
+                            _usart: PhantomData,
+                        },
+                        Rx {
+                            _usart: PhantomData,
+                        },
+                    )
+                }
+
+            }
+
+            impl Serial<$USARTX, Disabled> {
+                /// Deconstructs the serial and returns the component parts
+                pub fn free(self) -> ($USARTX, rec::$Rec) {
+                    (self.usart, rec::$Rec { _marker: PhantomData })
+                }
+
+                /// Enables the serial peripheral
+                pub fn enable(self) -> Serial<$USARTX, Enabled> {
+                    self.usart.cr1.modify(|_, w| w.ue().enabled());
+                    Serial {
+                        usart: self.usart,
+                        _ed: PhantomData,
+                    }
+                }
+            }
+
+            impl<EN> Serial<$USARTX, EN> {
+                /// Returns a mutable reference to the inner peripheral
+                pub fn inner(&self) -> &$USARTX {
+                    &self.usart
+                }
+
+                /// Returns a mutable reference to the inner peripheral
+                pub fn inner_mut(&mut self) -> &mut $USARTX {
+                    &mut self.usart
                 }
 
                 /// Starts listening for an interrupt event
@@ -534,36 +629,18 @@ macro_rules! usart {
                 }
 
                 /// Return true if the line idle status is set
-                pub fn is_idle(& self) -> bool {
+                pub fn is_idle(&self) -> bool {
                     unsafe { (*$USARTX::ptr()).isr.read().idle().bit_is_set() }
                 }
 
                 /// Return true if the tx register is empty (and can accept data)
-                pub fn is_txe(& self) -> bool {
+                pub fn is_txe(&self) -> bool {
                     unsafe { (*$USARTX::ptr()).isr.read().txe().bit_is_set() }
                 }
 
                 /// Return true if the rx register is not empty (and can be read)
-                pub fn is_rxne(& self) -> bool {
+                pub fn is_rxne(&self) -> bool {
                     unsafe { (*$USARTX::ptr()).isr.read().rxne().bit_is_set() }
-                }
-
-                pub fn split(self) -> (Tx<$USARTX>, Rx<$USARTX>) {
-                    (
-                        Tx {
-                            _usart: PhantomData,
-                        },
-                        Rx {
-                            _usart: PhantomData,
-                        },
-                    )
-                }
-                /// Releases the USART peripheral
-                pub fn release(self) -> $USARTX {
-                    // Wait until both TXFIFO and shift register are empty
-                    while self.usart.isr.read().tc().bit_is_clear() {}
-
-                    self.usart
                 }
             }
 
@@ -575,7 +652,7 @@ macro_rules! usart {
                          config: impl Into<config::Config>,
                          prec: rec::$Rec,
                          clocks: &CoreClocks
-                ) -> Result<Serial<$USARTX>, config::InvalidConfig>
+                ) -> Result<Serial<$USARTX, Enabled>, config::InvalidConfig>
                 {
                     Serial::$usartX(self, config, prec, clocks)
                 }
@@ -584,13 +661,13 @@ macro_rules! usart {
                                    config: impl Into<config::Config>,
                                    prec: rec::$Rec,
                                    clocks: &CoreClocks
-                ) -> Result<Serial<$USARTX>, config::InvalidConfig>
+                ) -> Result<Serial<$USARTX, Enabled>, config::InvalidConfig>
                 {
                     Serial::$usartX(self, config, prec, clocks)
                 }
             }
 
-            impl serial::Read<u8> for Serial<$USARTX> {
+            impl serial::Read<u8> for Serial<$USARTX, Enabled> {
                 type Error = Error;
 
                 fn read(&mut self) -> nb::Result<u8, Error> {
@@ -647,7 +724,7 @@ macro_rules! usart {
                 }
             }
 
-            impl serial::Write<u8> for Serial<$USARTX> {
+            impl serial::Write<u8> for Serial<$USARTX, Enabled> {
                 type Error = Never;
 
                 fn flush(&mut self) -> nb::Result<(), Never> {
@@ -665,7 +742,7 @@ macro_rules! usart {
                 }
             }
 
-            impl serial_block::write::Default<u8> for Serial<$USARTX> {
+            impl serial_block::write::Default<u8> for Serial<$USARTX, Enabled> {
                 //implement marker trait to opt-in to default blocking write implementation
             }
 
@@ -731,7 +808,7 @@ macro_rules! usart_sel {
 	($ccip:ident, $SEL:ident, $sel:ident, $PCLK:ident, $pclk:ident;
      $($USARTX:ident: $doc:expr,)+) => {
 	    $(
-            impl Serial<$USARTX> {
+            impl<EN> Serial<$USARTX, EN> {
                 /// Returns the frequency of the current kernel clock for
                 #[doc=$doc]
                 fn kernel_clk(clocks: &CoreClocks) -> Option<Hertz> {
