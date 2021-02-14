@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+* **Breaking**: Add new/new_unchecked methods for USB structures, remove pin
+  types from structure
+* Add support for USB1_ULPI #184
+
+
 ## [v0.8.0] 2020-10-26
 
 * **Breaking**: Ethernet PHY configuration feature flags removed. The user must
