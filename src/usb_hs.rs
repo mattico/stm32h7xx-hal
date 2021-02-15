@@ -31,6 +31,7 @@ pub struct USB1 {
     pub usb_pwrclk: stm32::OTG1_HS_PWRCLK,
     pub prec: rcc::rec::Usb1Otg,
     pub hclk: Hertz,
+    pub sys_ck: Hertz,
 }
 impl USB1 {
     #[cfg(not(feature = "rm0455"))]
@@ -41,9 +42,9 @@ impl USB1 {
         _pin_dm: PB14<Alternate<AF12>>,
         _pin_dp: PB15<Alternate<AF12>>,
         prec: rcc::rec::Usb1Otg,
-        hclk: Hertz,
+        clocks: &rcc::CoreClocks,
     ) -> Self {
-        Self::new_unchecked(usb_global, usb_device, usb_pwrclk, prec, hclk)
+        Self::new_unchecked(usb_global, usb_device, usb_pwrclk, prec, clocks)
     }
     #[cfg(feature = "rm0455")]
     pub fn new(
@@ -53,23 +54,24 @@ impl USB1 {
         _pin_dm: PA11<Alternate<AF10>>,
         _pin_dp: PA12<Alternate<AF10>>,
         prec: rcc::rec::Usb1Otg,
-        hclk: Hertz,
+        clocks: &rcc::CoreClocks,
     ) -> Self {
-        Self::new_unchecked(usb_global, usb_device, usb_pwrclk, prec, hclk)
+        Self::new_unchecked(usb_global, usb_device, usb_pwrclk, prec, clocks)
     }
     pub fn new_unchecked(
         usb_global: stm32::OTG1_HS_GLOBAL,
         usb_device: stm32::OTG1_HS_DEVICE,
         usb_pwrclk: stm32::OTG1_HS_PWRCLK,
         prec: rcc::rec::Usb1Otg,
-        hclk: Hertz,
+        clocks: &rcc::CoreClocks,
     ) -> Self {
         USB1 {
             usb_global,
             usb_device,
             usb_pwrclk,
             prec,
-            hclk,
+            hclk: clocks.hclk(),
+            sys_ck: clocks.sys_ck(),
         }
     }
 }
@@ -81,6 +83,7 @@ pub struct USB2 {
     pub usb_pwrclk: stm32::OTG2_HS_PWRCLK,
     pub prec: rcc::rec::Usb2Otg,
     pub hclk: Hertz,
+    pub sys_ck: Hertz,
 }
 #[cfg(not(feature = "rm0455"))]
 impl USB2 {
@@ -91,23 +94,24 @@ impl USB2 {
         _pin_dm: PA11<Alternate<AF10>>,
         _pin_dp: PA12<Alternate<AF10>>,
         prec: rcc::rec::Usb2Otg,
-        hclk: Hertz,
+        clocks: &rcc::CoreClocks,
     ) -> Self {
-        Self::new_unchecked(usb_global, usb_device, usb_pwrclk, prec, hclk)
+        Self::new_unchecked(usb_global, usb_device, usb_pwrclk, prec, clocks)
     }
     pub fn new_unchecked(
         usb_global: stm32::OTG2_HS_GLOBAL,
         usb_device: stm32::OTG2_HS_DEVICE,
         usb_pwrclk: stm32::OTG2_HS_PWRCLK,
         prec: rcc::rec::Usb2Otg,
-        hclk: Hertz,
+        clocks: &rcc::CoreClocks,
     ) -> Self {
         USB2 {
             usb_global,
             usb_device,
             usb_pwrclk,
             prec,
-            hclk,
+            hclk: clocks.hclk(),
+            sys_ck: clocks.sys_ck(),
         }
     }
 }
@@ -147,6 +151,10 @@ macro_rules! usb_peripheral {
 
                 self.hclk.0
             }
+
+            fn instructions_per_us(&self) -> u32 {
+                self.sys_ck.0 / 1_000_000 * 2 // Cortex-M7 is dual-issue
+            }
         }
     };
 }
@@ -169,6 +177,7 @@ pub struct USB1_ULPI {
     pub usb_pwrclk: stm32::OTG1_HS_PWRCLK,
     pub prec: rcc::rec::Usb1Otg,
     pub hclk: Hertz,
+    pub sys_ck: Hertz,
 }
 
 pub enum Usb1UlpiDirPin {
@@ -223,23 +232,24 @@ impl USB1_ULPI {
         _ulpi_d6: PB13<Alternate<AF10>>,
         _ulpi_d7: PB5<Alternate<AF10>>,
         prec: rcc::rec::Usb1Otg,
-        hclk: Hertz,
+        clocks: &rcc::CoreClocks,
     ) -> Self {
-        Self::new_unchecked(usb_global, usb_device, usb_pwrclk, prec, hclk)
+        Self::new_unchecked(usb_global, usb_device, usb_pwrclk, prec, clocks)
     }
     pub fn new_unchecked(
         usb_global: stm32::OTG1_HS_GLOBAL,
         usb_device: stm32::OTG1_HS_DEVICE,
         usb_pwrclk: stm32::OTG1_HS_PWRCLK,
         prec: rcc::rec::Usb1Otg,
-        hclk: Hertz,
+        clocks: &rcc::CoreClocks,
     ) -> Self {
         USB1_ULPI {
             usb_global,
             usb_device,
             usb_pwrclk,
             prec,
-            hclk,
+            hclk: clocks.hclk(),
+            sys_ck: clocks.sys_ck(),
         }
     }
 }
@@ -275,6 +285,10 @@ unsafe impl UsbPeripheral for USB1_ULPI {
 
     fn phy_type(&self) -> synopsys_usb_otg::PhyType {
         synopsys_usb_otg::PhyType::ExternalHighSpeed
+    }
+
+    fn instructions_per_us(&self) -> u32 {
+        self.sys_ck.0 / 1_000_000 * 2 // Cortex-M7 is dual-issue
     }
 }
 pub type Usb1UlpiBusType = UsbBus<USB1_ULPI>;
