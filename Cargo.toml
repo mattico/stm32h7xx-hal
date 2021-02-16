@@ -51,8 +51,7 @@ default-features = false
 optional = true
 
 [dependencies.defmt]
-git = "https://github.com/knurling-rs/defmt"
-rev = "574f77f"
+path = "../defmt"
 optional = true
 
 [dev-dependencies]
