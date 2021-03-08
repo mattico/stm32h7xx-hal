@@ -751,4 +751,3 @@ impl Rtc {
         self.prec.kernel_clk_mux(backup::RtcClkSel::LSI);
     }
 }
-S
